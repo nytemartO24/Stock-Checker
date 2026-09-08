@@ -27,6 +27,7 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
 from sites.amazon import browser as amazon_browser
+from sites.amazon import dates as dates_mod
 from sites.amazon.markets import MARKETS, NOT_DELIVERABLE_SIGNAL
 from sites.amazon.prices import ReferencePrices, detect_currency, parse_price, to_sek
 from sites.amazon.tiers import ceiling_for
@@ -70,6 +71,26 @@ AVAILABILITY_SELECTORS = [
 
 BUYABLE_SELECTORS = ["#add-to-cart-button", "#buy-now-button"]
 
+# The delivery promise. The date is searched ONLY inside whichever of these
+# matches — never against the whole page. A whole-page search is a
+# false-positive machine: "Reviewed in Spain on 21 January 2026" parses as a
+# date, and because it carries an explicit year the assume-next-year
+# correction never fires, so a stale unrelated date sails through looking
+# real. The DEXUnifiedCXPDM attribute is Amazon's own unified
+# delivery-promise container and survives the element-id churn that differs
+# between markets.
+DELIVERY_SELECTORS = [
+    "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE",
+    "#deliveryBlockMessage",
+    "#contextualIngressPtLabel_deliveryShortDeliveryDate",
+    "#deliveryMessageMirId",
+    "#mir-layout-DELIVERY_BLOCK",
+    '[data-csa-c-content-id="DEXUnifiedCXPDM"]',
+    "#ddmDeliveryMessage",
+    "#fast-track-message",
+    "#dynamicDeliveryMessage",
+]
+
 INTERNATIONAL_BANNER = "international shopping transition alert"
 
 # Parse the destination OUT of the banner rather than asking whether the
@@ -99,6 +120,8 @@ class ParsedProduct:
     currency: str | None
     seller: str | None
     is_amazon_seller: bool | None
+    delivery_date: str | None = None
+    delivery_days: int | None = None
     untrusted: str | None = None
 
 
@@ -129,7 +152,7 @@ def parse_product(html: str, config: dict, *, delivery_country: str) -> ParsedPr
         destination = international_destination(page_text)
         if destination.lower() != delivery_country.strip().lower():
             return ParsedProduct(
-                title, False, None, None, None, None, None,
+                title, False, None, None, None, None, None, None, None,
                 untrusted=(f"page dispatches to {destination or 'an unknown country'}, "
                            f"not {delivery_country}"),
             )
@@ -156,6 +179,20 @@ def parse_product(html: str, config: dict, *, delivery_country: str) -> ParsedPr
         signal in availability for signal in config["unavailable_signals"]
     )
 
+    # Delivery date, scoped to a matched delivery container only.
+    delivery_text = _first_text(soup, DELIVERY_SELECTORS)
+    delivery_date = delivery_days = None
+    if delivery_text:
+        match = dates_mod.pattern_for(config["months"]).search(delivery_text)
+        if match:
+            parsed = dates_mod.date_from_match(match, config["months"])
+            # Sanity-check before trusting it: a bogus date here is worse than
+            # none, because it becomes the baseline a future "moved earlier"
+            # alert fires against.
+            if dates_mod.is_plausible(parsed):
+                delivery_date = " ".join(match.group().split()).strip().rstrip(",")
+                delivery_days = dates_mod.days_until(parsed)
+
     return ParsedProduct(
         title=title,
         # Pre-orders count: Amazon renders them with the same add-to-cart
@@ -169,6 +206,8 @@ def parse_product(html: str, config: dict, *, delivery_country: str) -> ParsedPr
         currency=detect_currency(price_text, config["currency"]) if price_text else None,
         seller=seller_text or None,
         is_amazon_seller=is_amazon,
+        delivery_date=delivery_date,
+        delivery_days=delivery_days,
     )
 
 
@@ -188,11 +227,17 @@ class AmazonChecker(SiteChecker):
     def multiplier(self) -> float:
         return float(self.options.get("scalp_multiplier", 2.0))
 
-    def _reference_path(self) -> Path:
-        # Project root, not the process CWD: a run started elsewhere
-        # would otherwise split accumulated price knowledge across files.
+    def _state_path(self, kind: str) -> Path:
+        """Auxiliary state this site owns, beyond core's alert state.
+
+        Project root, not the process CWD: a run started elsewhere would
+        otherwise split accumulated knowledge across files.
+        """
         base = self.state_dir or Path(__file__).resolve().parents[2] / "state"
-        return base / f"{self.name}_reference_prices.json"
+        return base / f"{self.name}_{kind}.json"
+
+    def _reference_path(self) -> Path:
+        return self._state_path("reference_prices")
 
     def check(self) -> Iterator[StockResult]:
         if not self.watchlist:
@@ -206,6 +251,12 @@ class AmazonChecker(SiteChecker):
         references = ReferencePrices(
             self._reference_path(), overrides=self.options.get("max_price_sek") or {}
         )
+        deliveries = dates_mod.DeliveryState(
+            self._state_path("delivery"),
+            min_improvement_days=int(self.options.get(
+                "min_improvement_days", dates_mod.DEFAULT_MIN_IMPROVEMENT_DAYS)),
+        )
+        self._seen_keys: set[str] = set()
         try:
             with sync_playwright() as playwright:
                 for market in self.markets:
@@ -215,7 +266,7 @@ class AmazonChecker(SiteChecker):
                                      self.name, market, ", ".join(sorted(MARKETS)))
                         continue
                     try:
-                        yield from self._check_market(playwright, market, references)
+                        yield from self._check_market(playwright, market, references, deliveries)
                     except Exception:
                         # One market failing must not lose the others, and
                         # must mark the run incomplete so state isn't pruned
@@ -226,8 +277,12 @@ class AmazonChecker(SiteChecker):
             # Save whatever was learned even if a market blew up — a
             # reference price observed before the failure is still valid.
             references.save()
+            if not self.errors:
+                deliveries.prune(self._seen_keys)
+            deliveries.save()
 
-    def _check_market(self, playwright, market: str, references: ReferencePrices) -> Iterator[StockResult]:
+    def _check_market(self, playwright, market: str, references: ReferencePrices,
+                      deliveries) -> Iterator[StockResult]:
         config = MARKETS[market]
         # Destination comes from the environment first. The postcode is
         # personal data (it identifies a town), so it lives in gitignored
@@ -260,7 +315,7 @@ class AmazonChecker(SiteChecker):
             for asin in self.watchlist:
                 try:
                     result = self._check_one(page, market, config, asin, references, country,
-                                             location_note=location_note)
+                                             deliveries, location_note=location_note)
                 except Exception:
                     self.errors += 1
                     logger.exception("[%s] %s %s failed", self.name, market, asin)
@@ -272,7 +327,7 @@ class AmazonChecker(SiteChecker):
             logger.info("[%s] %s: done (delivering to %s)", self.name, market, location or "UNKNOWN")
 
     def _check_one(self, page, market: str, config: dict, asin: str,
-                   references: ReferencePrices, country: str,
+                   references: ReferencePrices, country: str, deliveries,
                    *, location_note: str | None = None) -> StockResult | None:
         url = f"https://www.{config['domain']}/-/en/dp/{asin}"
         # Browser navigations are requests to the site like any other, so
@@ -306,15 +361,33 @@ class AmazonChecker(SiteChecker):
         verdict = references.assess(asin, price_sek, self.multiplier,
                                     tier=tier, tier_ceiling=tier_ceiling)
 
+        # Delivery date: track it, and let the site REQUEST an alert when it
+        # moves meaningfully earlier. That is not a stock transition, so core's
+        # own rules would never surface it — a listing can sit "in stock" for
+        # weeks while its estimate walks from November to next Tuesday, which
+        # is the difference between unavailable and buyable.
+        key = f"{market}:{asin}"
+        self._seen_keys.add(key)
+        baseline, improved = deliveries.assess(key, parsed.delivery_date, config["months"])
+        deliveries.record(key, parsed.delivery_date, baseline, improved)
+        alert_reason = None
+        if improved:
+            alert_reason = (
+                f"delivery date moved earlier: {baseline} → {parsed.delivery_date}"
+                if baseline else f"delivery date now promised: {parsed.delivery_date}"
+            )
+
         notes = [verdict.note] if verdict.note else []
         if location_note:
             notes.append(location_note)
         alertable = not (verdict.suspected and not self.options.get("alert_on_suspected_scalp", True))
 
         logger.info(
-            "[%s] %s %s: %s%s%s", self.name, market, asin,
+            "[%s] %s %s: %s%s%s%s", self.name, market, asin,
             "IN STOCK" if parsed.in_stock else "unavailable",
             f" @ {parsed.price_text}" if parsed.price_text else "",
+            f" arrives {parsed.delivery_date} (+{parsed.delivery_days}d)"
+            if parsed.delivery_date else " no date",
             f" [{parsed.seller}]" if parsed.seller else "",
         )
         return StockResult(
@@ -328,6 +401,8 @@ class AmazonChecker(SiteChecker):
             price_value=parsed.price_value,
             currency=parsed.currency,
             seller=parsed.seller,
+            delivery_date=parsed.delivery_date,
             alertable=alertable,
+            alert_reason=alert_reason,
             notes=notes,
         )

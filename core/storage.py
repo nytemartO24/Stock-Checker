@@ -69,10 +69,22 @@ class SiteState:
         """
         if self.is_first_run:
             return None
+
         previous = self._entries.get(result.product_id)
         if previous is None:
+            # Checked FIRST, so it bypasses both the watchlist veto and the
+            # stock requirement. You cannot watchlist a product that does not
+            # exist yet, and knowing it exists is what lets you decide to.
             return "new"
-        if not result.in_stock or not result.alertable:
+
+        # From here the site's veto applies. A suppressed listing (Amazon
+        # scalp detection with alerting turned off) must not reach you by the
+        # side door of a date change either.
+        if not result.alertable:
+            return None
+        if result.alert_reason:
+            return "site"
+        if not result.in_stock:
             return None
         return "restock" if not previous.get("in_stock", False) else None
 

@@ -41,9 +41,20 @@ class StockResult:
     """Context in the alert, never a gate — a third-party seller is not by
     itself a problem (see CLAUDE.md's scalper section)."""
 
+    delivery_date: str | None = None
+    """When the retailer says it would arrive, as displayed. For Amazon a long
+    estimate is itself a form of unavailability — an add-to-cart button and a
+    date three months out is not meaningfully in stock."""
+
     alertable: bool = True
     """A site may veto notification for a site-specific reason. core/ does
     not ask why."""
+
+    alert_reason: str | None = None
+    """A site may REQUEST an alert it alone can judge, stating why — the
+    mirror of `alertable`. Amazon uses it for "delivery date moved earlier",
+    which is not a stock transition and so is invisible to core's own rules.
+    core sends it and renders the reason without interpreting it."""
 
     notes: list[str] = field(default_factory=list)
     """Free-text commentary rendered verbatim in the alert."""

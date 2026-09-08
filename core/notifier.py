@@ -33,6 +33,8 @@ def format_stock_alert(site_name: str, result) -> str:
     detail = []
     if result.price_text:
         detail.append(result.price_text)
+    if result.delivery_date:
+        detail.append(f"arrives {result.delivery_date}")
     if result.seller:
         detail.append(f"sold by {result.seller}")
     if detail:
@@ -59,6 +61,27 @@ def format_new_product_alert(site_name: str, result) -> str:
     lines.extend(f"⚠️ {note}" for note in result.notes)
     lines.append(result.url)
     return "\n".join(lines)
+
+
+def format_site_alert(site_name, result):
+    """An alert the SITE asked for, stating its own reason.
+
+    Amazon uses this for a delivery date moving earlier, which is not a stock
+    transition and so is invisible to core's rules. The reason is rendered
+    verbatim; core does not interpret it.
+    """
+    lines = [f"📅 **{site_name}** — {truncate(result.product_name)}",
+             result.alert_reason or ""]
+    detail = []
+    if result.price_text:
+        detail.append(result.price_text)
+    if result.seller:
+        detail.append(f"sold by {result.seller}")
+    if detail:
+        lines.append("  ·  ".join(detail))
+    lines.extend(f"⚠️ {note}" for note in result.notes)
+    lines.append(result.url)
+    return "\n".join(line for line in lines if line)
 
 
 class DiscordNotifier:
