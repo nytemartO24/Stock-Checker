@@ -1,0 +1,48 @@
+# Which sites and products are checked. No secrets here — the Discord
+# webhook lives in .env (see .env.example).
+#
+# Per-site rate_limit blocks override these key by key. They exist because
+# one Shopify JSON request answering a whole collection and one Amazon page
+# load per ASIN per market cannot share a single global limit.
+#
+# `country` is mandatory for Shopify sites and load-bearing: a Shopify
+# Markets store prices in the VISITOR's country, so without it the same URL
+# returns a different currency depending on request headers, and nothing in
+# the response says which one you got. Pinning it to SE means every price
+# this project reports is what it would cost delivered to Sweden — directly
+# comparable across sites, and to Amazon's SEK figures.
+
+defaults:
+  rate_limit:
+    min_delay_seconds: 1.0
+    max_delay_seconds: 3.0
+    timeout_seconds: 30
+    max_retries: 3
+
+sites:
+  popsplanet:
+    type: shopify
+    enabled: true
+    domain: www.popsplanet.it
+    # Locale prefix this store serves its English catalogue under.
+    base_path: /en
+    country: SE
+    # Single-market store: verified to quote EUR regardless of country.
+    currency: EUR
+    currency_symbol: "€"
+    collections:
+      - beyblade-x-booster
+      - beyblade-x-starter-pack
+      - beyblade-x-double-pack
+
+  toysnowman:
+    type: shopify
+    enabled: true
+    domain: toysnowman.com
+    country: SE
+    # Shopify Markets store: with country=SE it quotes SEK. Its base
+    # currency is CAD — do not assume one from the domain.
+    currency: SEK
+    currency_symbol: "kr"
+    collections:
+      - beyblade

@@ -1,0 +1,285 @@
+# Stock Checker — Project Guide for Claude
+
+## What this project is
+
+A Python tool that monitors product pages across multiple retailer websites
+and notifies me (via Discord webhook) the moment an out-of-stock product
+becomes available. Personal-use, but built cleanly enough to run unattended
+on a VPS long-term.
+
+Two run modes, same core logic:
+- **Local dev**: a polling loop process that checks all enabled sites on an
+  interval.
+- **VPS/production**: a single-run script invoked by an external cron job
+  (already set up on the user's VPS). No built-in scheduler needed for this
+  mode — cron owns the timing.
+
+## Core design principles (do not violate without discussing first)
+
+1. **Pluggable site architecture.** New retailers must be addable by adding
+   one new file, not by editing shared/core code. Every site checker
+   implements the same small interface (see Architecture below). If you find
+   yourself editing `core/` to support a new site, stop — that's a sign the
+   interface is wrong, not that this site is special.
+2. **Be a polite scraper.** This is personal use, but requests must stay
+   reasonable: randomized delay between requests to the same site, a real
+   User-Agent, no hammering a site faster than a human would refresh a page,
+   and back off (don't retry-loop aggressively) on 429/403 responses. Never
+   add a feature that increases request volume without flagging it to me
+   first.
+3. **Lean over clever.** Default to the simplest implementation that works.
+   No abstraction, config option, or framework should be added until at
+   least two real sites need it. Prefer a few straightforward functions over
+   a deep class hierarchy. If an implementation feels bulky, stop and look
+   for the smaller version before continuing.
+4. **Secrets never get committed.** Discord webhook URL and any per-site
+   credentials live in `.env` (gitignored), loaded via environment
+   variables. Never hardcode a webhook URL or write one into a committed
+   file, example config included.
+5. **Question the approach before building.** For anything beyond a small
+   fix (a new site checker, a new notification channel, a storage change),
+   briefly state the approach and at least one alternative considered, and
+   why, before writing code. Don't silently pick the first idea for
+   non-trivial changes.
+
+## Architecture
+
+```
+stock_checker/
+  sites/              # one file per retailer, e.g. sites/example_store.py
+    base.py           # SiteChecker interface all site modules implement
+    __init__.py       # registry that discovers/loads enabled site modules
+  core/
+    scheduler.py       # polling loop for local dev mode
+    notifier.py         # Discord webhook sending
+    storage.py           # tracks last-known stock state per product (avoid duplicate alerts)
+    http.py                # shared politeness layer: UA, rate limiting, backoff — obeyed by BOTH transports
+  config/
+    sites.yaml          # which sites/products are enabled, check interval, etc. (no secrets)
+  state/                # runtime state, gitignored: one file per site,
+                        #   amazon/ sub-namespaced per market, plus
+                        #   amazon/_reference_prices.json (long-lived)
+  main.py                # entrypoint: single-run mode (for cron) — checks all enabled sites once
+  run_loop.py            # entrypoint: polling-loop mode (for local dev)
+  tests/
+  .env.example           # documents required env vars, no real values
+  requirements.txt
+```
+
+Each site module in `sites/` implements `check(product_config) -> StockResult`:
+
+```python
+@dataclass
+class StockResult:
+    in_stock: bool              # purchasable OR pre-orderable
+    product_name: str
+    url: str
+    price_text: str | None      # as displayed, e.g. "68.63 EUR"
+    price_value: float | None   # normalized, for comparison
+    currency: str | None
+    seller: str | None          # context in the alert, never a gate
+    alertable: bool = True      # site may veto; core does not ask why
+    notes: list[str] = field(default_factory=list)
+```
+
+`core/storage.py` decides whether a result is "new" (worth notifying
+about) vs. unchanged — site modules must not implement their own
+duplicate-suppression logic. `alertable` is a *separate* gate: it lets a
+site veto a notification for a site-specific reason (Amazon's scalp
+detection is the only current user) without `core/` learning what that
+reason is. Keeping the two distinct is deliberate — collapsing them drags
+site-specific policy into shared code, which is the smell principle 1
+warns about.
+
+(This structure is the intended target — if the current folder doesn't
+match it yet, that's expected early on. Build toward it, and update this
+section once the real structure diverges intentionally.)
+
+## Conventions
+
+- Python 3.11+, type hints on all function signatures.
+- Two transports, both first-class, chosen per site:
+  - **JSON API** (`httpx`, sync) wherever a site exposes one — always
+    prefer it. Shopify stores do: `/products.json?limit=250` returns
+    `available`, `price` and `compare_at_price` per variant, so there is
+    nothing to parse and no browser to run.
+  - **Browser** (Playwright) only where the data is injected client-side.
+    Amazon is confirmed to need it: delivery, seller and price blocks all
+    arrive after `domcontentloaded`.
+  BeautifulSoup is for browser-rendered HTML, not a default. Whichever
+  transport a site uses it must obey `core/http.py`'s politeness policy
+  (UA, delay, backoff) — `core/http.py` owns that policy for both, while
+  Chromium itself lives in the site module that needs it. Don't make raw
+  `requests`/`httpx` calls inside a site module.
+- Config over code: which products/sites are checked and how often lives in
+  `config/sites.yaml`, not hardcoded in Python.
+- Errors must never cascade — catch and log per-site AND per-product. A
+  failure on one product must not kill the rest of that site's run.
+  (Inherited from news-notifier, where one aborted navigation left the page
+  mid-transition and became "navigation interrupted" for every subsequent
+  product in that run.)
+- Tests live in `tests/`, mirroring the `sites/`/`core/` structure. New site
+  modules should get at least a basic parsing test against a saved fixture
+  — HTML for browser sites, JSON for API sites (don't hit the live site in
+  tests).
+
+## Workflow expectations
+
+- Implement, then self-review before calling something done: check for bugs,
+  unnecessary complexity, and whether the interface in Architecture was
+  actually followed.
+- After any nontrivial change, run existing tests (or the relevant script
+  manually) rather than assuming it works.
+- Run `/code-review` on the diff before calling a nontrivial piece done —
+  without being asked. Self-review shares the session's own assumptions; a
+  review pass is what catches what I already talked myself into. (The
+  deeper `/code-review ultra` can only be launched by the user.)
+- Verification has three tiers and ALL THREE are available. Use the
+  cheapest one that answers the question:
+  1. **Fixture tests** — offline, deterministic, catch regressions in our
+     own parsing. Never hit a live site here.
+  2. **Live run from the dev machine** — verified 2026-09-08 against both
+     Shopify stores AND amazon.de: a plain HTTPS GET of
+     `/-/en/dp/<asin>` returned `lang="en-gb"`, no CAPTCHA, with seller,
+     `#availability`, the delivery block and the price all present in the
+     RAW server HTML. This is the normal way to debug a parsing change.
+  3. **Live run on the VPS** — reachable over key-based SSH, so production
+     behaviour can be checked directly rather than inferred. ALWAYS
+     dry-run first (omit `--send-discord`) so debugging cannot fire real
+     alerts, and do not casually overwrite production state.
+  news-notifier's CLAUDE.md says Amazon is unreachable from a sandboxed
+  session. That described ITS environment, not this one — do not inherit
+  the claim.
+- One successful live request is NOT proof of sustained access. Amazon
+  rate-limits and serves CAPTCHAs under volume, and a home IP behaves
+  differently from a datacenter one. Treat repeated live runs as a real
+  cost and prefer fixtures for iteration.
+- If a mistake gets caught and corrected during a session (a bug, a bad
+  assumption, a design decision that didn't pan out), record it in
+  `LESSONS.md` in one or two lines — see below.
+
+## Self-updating this file
+
+This CLAUDE.md is expected to evolve as the project does. Whenever a
+session produces a durable decision, correction, or convention that isn't
+already captured here — a new site turns out to need special handling, a
+performance issue changes how checks run, a "we tried X, it didn't work,
+do Y instead" moment — update the relevant section of this file directly
+as part of that session's work, not just in conversation. Keep additions
+short and concrete; prune or rewrite sections that go stale rather than
+letting the file grow indefinitely. If unsure whether a change to this file
+is warranted, ask before committing to it.
+
+Also maintain `LESSONS.md` alongside this file as an append-only log of
+specific mistakes and their fixes (one entry per line/bullet, newest last).
+Periodically (when it gets long, or when asked), distill recurring
+lessons from it into a proper convention here in CLAUDE.md, and trim the
+log.
+
+## Sites
+
+**Shopify (`sites/shopify.py`)** — one module for every Shopify store,
+parameterized by domain + collections in `sites.yaml`: `popsplanet.it`
+(booster / starter-pack / double-pack collections) and `toysnowman.com`.
+`/products.json?limit=250` gives `available` (authoritative, and it already
+covers pre-orders), `price`, `compare_at_price` and `sku` per variant.
+
+**Always pin `?country=` — this is load-bearing.** A Shopify Markets store
+prices in the VISITOR's country, and nothing in the payload says which
+currency you got. Measured 2026-09-08 on toysnowman: the same URL returned
+`25.99` bare and `185.00` when any `Accept-Language` header was sent (the
+same price in SEK). `country=` overrides that guessing, so `currency` in
+`sites.yaml` becomes a fact rather than an assumption. Both stores are
+pinned to `SE`, which means every price this project reports is what it
+costs delivered to Sweden — comparable across sites and against Amazon's
+SEK figures, and it removes the need for FX conversion on the Shopify side
+entirely.
+
+`compare_at_price` is not reliably an RRP (some items have it equal to
+`price`), so don't treat it as one.
+
+**Amazon (`sites/amazon.py`)** — Playwright, ported from news-notifier's
+`pilot/eu_multimarket/`. Market is config, not a separate module. Carried
+over from that project: the `/-/en/` URL override with merged
+English+native month tables, delivery-location pinning (postcode on the
+domestic market, country picker elsewhere, no cross-fallback), scoped
+extraction (never a whole-page regex), and the named outcome taxonomy in
+which UNKNOWN means "we did not understand this page", not "no stock".
+
+### In stock, and the scalper problem
+
+"In stock" means **available for purchase or pre-order**. On Shopify that is
+just `variant.available`. Amazon is the only site with multiple vendors per
+listing, so it is the only one needing price defence — do not generalise
+this logic to other sites.
+
+Seller identity is NOT the discriminator. From news-notifier's real data:
+third-party seller Weltstore quoted 21.69 EUR / 247 SEK consistently across
+markets (fair), while `is_amazon_seller` returns True for "Amazon UK".
+Price against a reference is the test; the seller name is context in the
+alert.
+
+**Reference price = the lowest FX-normalized price ever observed from an
+Amazon-sold offer**, persisted in `state/amazon/_reference_prices.json`,
+kept out of per-market alert state so a state reset does not destroy it.
+Flag anything above `reference * scalp_multiplier` (default 2.0, set in
+`sites.yaml`). Scalping on this line runs 4-5x — the motivating example was
+68.63 EUR against a 12.99 EUR street price — so threshold precision matters
+far less than having a trustworthy reference.
+
+- A flagged listing is still `in_stock=True` (it genuinely is purchasable),
+  carrying an explanatory note. `alert_on_suspected_scalp: true` in
+  `sites.yaml` tags it; set it false to suppress the notification.
+  Detection, logging and state recording continue either way.
+- **No reference yet -> alert anyway, labelled.** Silently suppressing a
+  real restock is the dangerous failure; a false positive costs nothing.
+- Cold-start poisoning is the real trap: if a product's first sighting IS
+  the scalp price, that becomes the reference. So only ever record a
+  reference from an Amazon-sold offer, keep it provisional (and say so)
+  until corroborated, and allow an optional `max_price` override in the
+  watchlist. `max_price` is deliberately NOT required up front —
+  auto-reference first, hand-set ceilings only where it misbehaves.
+- Seed reference prices for currently-tracked ASINs from news-notifier's
+  existing per-market state to skip the cold-start window. That seed
+  correctly ignores the scalped example, whose only observation is
+  third-party.
+- Currency normalization is needed only where a site can't quote SEK
+  directly. The Shopify sites are pinned to `country=SE` and so already
+  report SEK; Amazon quotes per-market. A static FX table in config is
+  enough for the rest: this needs 2x discrimination, not accounting
+  accuracy.
+
+## Open questions / not yet decided
+
+- VPS deployment mechanics (systemd service vs. keeping it cron-only) —
+  revisit once local version is stable. Leaning cron-only, reusing
+  news-notifier's `deploy/run.sh` pattern (per-script `flock`, START/END
+  markers with exit code, `.env` sourced at run time).
+- Does Amazon actually need Playwright? Evidence so far says **maybe not**,
+  but the blocker is delivery-location pinning, not page fetching.
+  Measured 2026-09-08 with plain HTTP + a cookie jar, warming up on the
+  `/-/en/` homepage first exactly as `browser.py:open_market()` does:
+  6/6 real product pages, 6/6 `lang="en-gb"`, 6/6 resolved to a definite
+  state, and the known third-party listing returned its seller and price
+  (`London Lane Company`, EUR 68.63) matching stored pilot state. So the
+  page content is server-rendered and reachable without a browser.
+  What is NOT yet solved without a browser is `set_delivery_location()`:
+  the pilot drives Amazon's glow modal (postcode fields / country
+  `<select>`), and a delivery date is meaningless without a pinned
+  destination. Replicating that over plain HTTP means reproducing whatever
+  cookie or form POST the modal performs — plausible, unproven, and the
+  thing to settle before dropping Playwright. Until then the Amazon module
+  stays browser-based as designed.
+  **The warm-up is mandatory either way**: a cookieless request to
+  `/-/en/dp/<asin>` gets served the market's NATIVE layout, where none of
+  the pilot's selectors match. That looks exactly like being blocked and
+  is not.
+- Cross-site RRP matching as a scalp reference — using the Shopify stores'
+  prices as an anchor for Amazon. Deliberately deferred: coverage is
+  partial (some tracked ASINs are not stocked there at all) and
+  title-to-ASIN matching is fuzzy. Revisit only if auto-reference proves
+  insufficient.
+
+(Resolved: retailer list — see Sites. Per-site rate-limit overrides — yes,
+needed now, not deferred: one Shopify JSON request per collection and one
+browser page-load per ASIN per market cannot share a global limit.)

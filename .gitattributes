@@ -1,0 +1,4 @@
+# This repo is developed on Windows and runs on a Linux VPS. Without this,
+# Git checks files out with CRLF and a shell script committed from here
+# fails on the server with "bad interpreter: /usr/bin/env bash^M".
+* text=auto eol=lf

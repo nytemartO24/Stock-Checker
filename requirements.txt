@@ -1,0 +1,11 @@
+# Runtime
+httpx>=0.27
+PyYAML>=6.0
+
+# Dev / tests
+pytest>=8.0
+
+# Added when the Amazon site module lands (it needs a real browser and HTML
+# parsing; the Shopify checkers need neither):
+#   beautifulsoup4
+#   playwright
