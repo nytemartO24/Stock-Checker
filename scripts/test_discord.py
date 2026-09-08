@@ -31,6 +31,7 @@ from core.notifier import DiscordNotifier, format_stock_alert  # noqa: E402
 from sites import build_checker  # noqa: E402
 
 DISCORD_LIMIT = 1800  # leave headroom under the 2000 hard cap
+NL_ = chr(10)  # newline inside f-strings, without escapes
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -55,21 +56,31 @@ def main(argv: list[str] | None = None) -> int:
         with PoliteClient(min_delay=config.min_delay, max_delay=config.max_delay,
                           timeout=config.timeout, max_retries=config.max_retries) as client:
             checker = build_checker(config, client, throwaway)
-            in_stock = [r for r in checker.check() if r.in_stock]
+            results = list(checker.check())
 
-        total += len(in_stock)
-        logger.info("[%s] %d product(s) currently in stock", config.name, len(in_stock))
-        summary_lines.append(f"\n**{config.name}** — {len(in_stock)} would alert:")
-        for result in in_stock:
+        # alertable matters as much as in_stock: a watchlist marks every
+        # other product non-alertable, so counting raw in-stock products
+        # would report a noise level the user will never experience.
+        in_stock = [r for r in results if r.in_stock]
+        would_alert = [r for r in in_stock if r.alertable]
+
+        total += len(would_alert)
+        logger.info("[%s] %d tracked, %d in stock, %d ALERT-ELIGIBLE (watchlist applied)",
+                    config.name, len(results), len(in_stock), len(would_alert))
+        if not would_alert:
+            summary_lines.append(f"{NL_}**{config.name}** — nothing watchlisted is in stock ({len(in_stock)} in stock, none watched)")
+            continue
+        summary_lines.append(f"{NL_}**{config.name}** — {len(would_alert)} would alert (of {len(in_stock)} in stock):")
+        for result in would_alert:
             tag = "  [flagged]" if result.notes else ""
             summary_lines.append(f"  · {result.product_name[:60]}  {result.price_text or ''}{tag}")
 
-        for result in in_stock[: args.samples]:
+        for result in would_alert[: args.samples]:
             logger.info("--- sample alert (%s) ---\n%s", config.name,
                         format_stock_alert(config.name, result))
 
-    header = (f"🧪 **Stock Checker test** — every product currently in stock, i.e. "
-              f"everything that would alert you on a restock ({total} total). "
+    header = (f"🧪 **Stock Checker test** — the {total} watchlisted product(s) currently "
+              f"in stock, i.e. exactly what would have interrupted you. "
               f"This is the noise level to judge; nothing here is a real restock.")
     body = header + "\n" + "\n".join(summary_lines)
     # One message, truncated rather than split: the point is to gauge volume,
