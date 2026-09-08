@@ -232,7 +232,30 @@ def open_market(playwright, market: str, config: dict, *, country: str, postcode
         # destination we didn't ask for. Seen live on .se. safe_goto also
         # clears the cookie banner and interstitial, which this used to do
         # itself.
-        safe_goto(page, warmup_url, market)
+        # Verify the warm-up actually landed on a usable page before trying
+        # to pin anything. news-notifier applies this check to product pages
+        # ("landed on X instead of the product page — retrying") but never to
+        # the warm-up, and .se showed why it is needed here too: after an
+        # aborted download-prompt navigation the page can be mid-transition
+        # or still showing an interstitial, so the location widget does not
+        # exist yet. Pinning then fails with "no location picker", and the
+        # interstitial gets dismissed seconds later by the first product's
+        # navigation — too late to matter.
+        for attempt in range(1, 3):
+            safe_goto(page, warmup_url, market)
+            try:
+                page.wait_for_selector(GLOW_OPENER_SELECTOR, timeout=8000)
+                break
+            except PlaywrightTimeoutError:
+                logger.warning(
+                    "[%s] warm-up landed on %r with no location picker — retrying (%d/2)",
+                    market, page.url, attempt,
+                )
+        else:
+            logger.warning(
+                "[%s] no location picker after 2 warm-up attempts; the destination "
+                "cannot be pinned and this market's results are not comparable", market,
+            )
         location = set_delivery_location(page, market, config, country, postcode)
 
         # Substring check both ways: the widget renders the country alone

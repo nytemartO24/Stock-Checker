@@ -67,3 +67,10 @@ CLAUDE.md and trim this file.
   was comparable. The pilot had fixed exactly this bug one level down and
   said so in a comment. Porting proven code means porting the rule it
   encodes ("every navigation goes through safe_goto"), not just the function.
+
+- 2026-09-08: Two config edits reported success while changing nothing —
+  `str.replace()` on a target that no longer matched, with no assertion. The
+  title filter looked implemented and tested (110 passing) but the live scan
+  dropped 0 of 60 products. Every scripted edit gets
+  `assert s.count(old) == 1` before the replace; a silent no-op that still
+  prints "done" is worse than a crash.
