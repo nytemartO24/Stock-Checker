@@ -194,7 +194,7 @@ Notes for whoever runs this next:
 - Git Bash rewrites Linux-looking paths when passing them to `wsl.exe`.
   Prefix with `MSYS_NO_PATHCONV=1` when a WSL-side absolute path is an
   argument, or `tee /home/kali/...` becomes `C:/Program Files/Git/home/...`.
-- `wsl.exe` output can carry NUL bytes; pipe through `tr -d ' '` when the
+- `wsl.exe` output can carry NUL bytes; pipe through `tr -d '\0'` when the
   result looks mangled.
 - ALWAYS dry-run against production first (omit `--send-discord`), and
   don't `git pull` or overwrite state on the VPS without being asked — it
