@@ -187,8 +187,16 @@ class ReferencePrices:
         distinct = entry.get("distinct_prices") or [entry["sek"]]
         return entry["sek"], len(distinct) < CORROBORATION_DISTINCT_PRICES
 
-    def assess(self, asin: str, price_sek: float | None, multiplier: float) -> ScalpVerdict:
-        """Judge a price against the reference.
+    def assess(self, asin: str, price_sek: float | None, multiplier: float,
+               *, tier: str | None = None, tier_ceiling: float | None = None) -> ScalpVerdict:
+        """Judge a price, preferring the strongest evidence available.
+
+        In order: a manual override, then the lowest Amazon-sold price ever
+        seen for this exact ASIN, then a tier ceiling derived from the
+        product's title (see tiers.py). The tier fallback exists because a
+        product whose only sightings are third-party — the scalper case —
+        never earns a per-ASIN reference and would otherwise be permanently
+        unjudgeable.
 
         A missing reference NEVER suppresses: silently swallowing a real
         restock is the dangerous failure, while a false positive costs
@@ -197,20 +205,36 @@ class ReferencePrices:
         reference, provisional = self.reference_for(asin)
         if price_sek is None:
             return ScalpVerdict(False, None, reference)
-        if reference is None:
-            return ScalpVerdict(False, "price unverified — no reference price for this product yet", None)
 
-        ratio = price_sek / reference
-        if ratio <= multiplier:
-            return ScalpVerdict(False, None, reference)
+        if reference is not None:
+            ratio = price_sek / reference
+            if ratio <= multiplier:
+                return ScalpVerdict(False, None, reference)
+            note = (
+                f"suspected scalp: {price_sek:,.0f} SEK is {ratio:.1f}x the reference "
+                f"{reference:,.0f} SEK (threshold {multiplier:g}x)"
+            )
+            if provisional:
+                note += " — reference is provisional, based on a single observed price"
+            return ScalpVerdict(True, note, reference)
 
-        note = (
-            f"suspected scalp: {price_sek:,.0f} SEK is {ratio:.1f}x the reference "
-            f"{reference:,.0f} SEK (threshold {multiplier:g}x)"
-        )
-        if provisional:
-            note += " — reference is provisional, based on a single observed price"
-        return ScalpVerdict(True, note, reference)
+        if tier_ceiling:
+            # Deliberately a CEILING, not a median: this is weaker evidence
+            # than a real observation, so it is calibrated to avoid crying
+            # wolf on a legitimately pricier item in the same tier. It still
+            # catches the 4-5x scalps that motivated all this.
+            ratio = price_sek / tier_ceiling
+            if ratio <= multiplier:
+                return ScalpVerdict(False, None, tier_ceiling)
+            return ScalpVerdict(
+                True,
+                f"suspected scalp: {price_sek:,.0f} SEK is {ratio:.1f}x the typical "
+                f"ceiling for a {tier} ({tier_ceiling:,.0f} SEK) — no per-product "
+                f"reference yet, so this is judged on product type alone",
+                tier_ceiling,
+            )
+
+        return ScalpVerdict(False, "price unverified — no reference price for this product yet", None)
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

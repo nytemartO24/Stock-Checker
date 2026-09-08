@@ -28,6 +28,7 @@ from playwright.sync_api import sync_playwright
 from sites.amazon import browser as amazon_browser
 from sites.amazon.markets import MARKETS, NOT_DELIVERABLE_SIGNAL
 from sites.amazon.prices import ReferencePrices, detect_currency, parse_price, to_sek
+from sites.amazon.tiers import ceiling_for
 from sites.base import SiteChecker, StockResult
 
 logger = logging.getLogger(__name__)
@@ -289,7 +290,11 @@ class AmazonChecker(SiteChecker):
 
         price_sek = to_sek(parsed.price_value, parsed.currency)
         references.observe(asin, price_sek, is_amazon_seller=parsed.is_amazon_seller)
-        verdict = references.assess(asin, price_sek, self.multiplier)
+        # Title-derived tier is only a FALLBACK — assess() prefers a real
+        # per-ASIN observation and only reaches for this when there isn't one.
+        tier, tier_ceiling = ceiling_for(parsed.title, self.options.get("tier_ceilings_sek") or {})
+        verdict = references.assess(asin, price_sek, self.multiplier,
+                                    tier=tier, tier_ceiling=tier_ceiling)
 
         notes = [verdict.note] if verdict.note else []
         if location_note:

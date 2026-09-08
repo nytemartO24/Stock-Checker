@@ -57,6 +57,25 @@ sites:
     # Optional per-ASIN ceilings in SEK, for products where the automatic
     # reference misbehaves. Deliberately empty: auto-reference first.
     max_price_sek: {}
+    # Fallback used ONLY when an ASIN has no observed Amazon-sold price —
+    # the scalper case, where the only sightings are third-party. The
+    # product's title is classified by type (see sites/amazon/tiers.py) and
+    # judged against these.
+    #
+    # Calibrated from 162 real products across both Shopify stores,
+    # normalized to SEK. These are CEILINGS (roughly the observed maximum
+    # plus headroom), not averages: weak evidence should not cry wolf on a
+    # legitimately pricier item of the same type. Re-derive them if the
+    # product line shifts. `unknown` is deliberately absent — an
+    # unclassifiable product falls through to "price unverified" rather
+    # than being judged against a number we made up.
+    tier_ceilings_sek:
+      booster: 190      # observed 93-180
+      starter: 210      # observed 93-202
+      dual: 350         # observed 164-338
+      bundle: 620       # observed 356-605
+      set: 520          # observed 128-498
+      accessory: 230    # observed 93-214
     watchlist:
       - B0FCYT9DG6  # Shark Scale
       - B0H1RKP3KL  # Tread Croc

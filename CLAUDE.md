@@ -317,8 +317,21 @@ far less than having a trustworthy reference.
   carrying an explanatory note. `alert_on_suspected_scalp: true` in
   `sites.yaml` tags it; set it false to suppress the notification.
   Detection, logging and state recording continue either way.
-- **No reference yet -> alert anyway, labelled.** Silently suppressing a
-  real restock is the dangerous failure; a false positive costs nothing.
+- **No per-ASIN reference -> fall back to a title-derived tier ceiling**
+  (`sites/amazon/tiers.py`). This is what makes the scalper case judgeable
+  at all: a product whose only sightings anywhere are third-party never
+  earns an Amazon-sold reference, so without this it could only ever be
+  reported as "price unverified". Beyblade X titles are regular enough to
+  classify — the key insight is that expensive items are MULTI-ITEM
+  BUNDLES, spotted by counting the `&` / ` e ` / ` vs. ` joins, without
+  which the `starter` tier spanned 93-605 SEK and was useless.
+  The ceilings are calibrated from 162 real retail products and validated
+  to produce ZERO false positives across them; 3 remain unclassifiable and
+  correctly fall through to "unverified". They are CEILINGS, not medians —
+  weaker evidence must not cry wolf on a legitimately pricier item.
+- **Still no reference and no tier -> alert anyway, labelled.** Silently
+  suppressing a real restock is the dangerous failure; a false positive
+  costs nothing.
 - Cold-start poisoning is the real trap: if a product's first sighting IS
   the scalp price, that becomes the reference. So only ever record a
   reference from an Amazon-sold offer, keep it provisional (and say so)
