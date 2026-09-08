@@ -45,32 +45,33 @@ class ShopifyChecker(SiteChecker):
         return [t.lower() for t in (self.options.get("title_exclude") or [])]
 
     @property
-    def watchlist(self) -> list[str]:
-        """Terms identifying the products worth being NOTIFIED about. Empty
-        means everything (the original behaviour)."""
-        return [t.lower() for t in (self.options.get("watchlist") or [])]
+    def watchlist(self) -> set[str]:
+        """Product HANDLES worth being NOTIFIED about. Empty means everything.
 
-    def is_watched(self, title: str) -> bool:
+        Handles, not title terms, because they are Shopify's equivalent of an
+        ASIN: exact, unique and stable. news-notifier's whitelist worked by
+        navigating directly to supplied ASINs, and that precision is the
+        point — a substring on titles has two failure modes this project
+        already hit. Product names are not word-order stable (the item quoted
+        as "Shark Scale" is titled "Scale Shark 4-50UF", so the plain name
+        matches nothing), and a term also matches multi-item BUNDLES that
+        merely contain the product.
+
+        Use `scripts/audit_store.py --find <term>` to look a handle up once.
+        """
+        return {h.strip().lower() for h in (self.options.get("watchlist") or []) if h.strip()}
+
+    def is_watched(self, handle: str) -> bool:
         """Whether a restock of this product should notify.
 
-        Separate from `wanted()` on purpose. A whole collection arrives in
+        Deliberately separate from `wanted()`. A whole collection arrives in
         ONE request, so tracking every product is free and worth doing — it
-        keeps price history and lets a newcomer be spotted from
-        `first_seen`. What the watchlist controls is the alert, via
-        StockResult.alertable, so a store's 60 products can be tracked while
-        only the handful you care about are allowed to interrupt you.
-
-        Matching is a case-insensitive substring, which is predictable but
-        blunt: a term also matches multi-item bundles CONTAINING that
-        product, and product names are not word-order stable across stores
-        ("Scale Shark 4-50UF" on one, quoted as "Shark Scale" elsewhere).
-        The product code (`4-50UF`) is the reliable key when a plain name
-        misses.
+        keeps price history and gives each product a first_seen date. The
+        watchlist gates only the alert, via StockResult.alertable, so a
+        store's 60 products stay tracked while only the handful you care
+        about may interrupt you.
         """
-        if not self.watchlist:
-            return True
-        low = (title or "").lower()
-        return any(term in low for term in self.watchlist)
+        return not self.watchlist or (handle or "").lower() in self.watchlist
 
     def wanted(self, title: str) -> bool:
         """A store groups by its own logic, not ours: toysnowman files two
@@ -119,6 +120,17 @@ class ShopifyChecker(SiteChecker):
                 # is now an incomplete view, so say so.
                 self.errors += 1
                 logger.exception("[%s] collection %r failed", self.name, handle)
+
+        # A watchlist entry that matches nothing is almost always a typo or a
+        # renamed product, and it fails SILENTLY — you simply never hear
+        # about that item again. Only trustworthy on a clean run, since a
+        # failed collection could legitimately explain the absence.
+        missing = self.watchlist - {h.lower() for h in seen}
+        if missing and not self.errors:
+            logger.warning(
+                "[%s] %d watchlist handle(s) matched no product — typo or renamed? %s",
+                self.name, len(missing), ", ".join(sorted(missing)),
+            )
 
     def _check_collection(self, handle: str, seen: set[str]) -> Iterator[StockResult]:
         for page in range(1, MAX_PAGES + 1):
@@ -188,7 +200,7 @@ class ShopifyChecker(SiteChecker):
             currency=currency,
             seller=None,  # single-vendor store; the site IS the seller
             # Tracked either way; only watchlisted products may interrupt.
-            alertable=self.is_watched(product.get("title") or handle),
+            alertable=self.is_watched(handle),
         )
 
 

@@ -136,16 +136,16 @@ def test_watchlist_gates_alerts_but_not_tracking(fake_client):
     """A whole collection arrives in one request, so tracking everything is
     free. The watchlist controls only whether a restock may interrupt you."""
     payload = {"products": [
-        {"handle": "wanted", "title": "Beyblade X Scale Shark 4-50UF UX Booster Pack",
+        {"handle": "beyblade-x-scale-shark-4-50uf", "title": "Beyblade X Scale Shark 4-50UF UX Booster Pack",
          "variants": [{"price": "93.00", "available": True}]},
-        {"handle": "junk", "title": "Beyblade X Arrow Wizard 4-80O Booster Pack",
+        {"handle": "beyblade-x-arrow-wizard-4-80o", "title": "Beyblade X Arrow Wizard 4-80O Booster Pack",
          "variants": [{"price": "93.00", "available": True}]},
     ]}
-    options = dict(OPTIONS, watchlist=["4-50UF"])
+    options = dict(OPTIONS, watchlist=["beyblade-x-scale-shark-4-50uf"])
     results = {r.product_id: r for r in ShopifyChecker("t", options, fake_client([payload])).check()}
-    assert set(results) == {"wanted", "junk"}          # both tracked
-    assert results["wanted"].alertable is True
-    assert results["junk"].alertable is False          # tracked, but silent
+    assert len(results) == 2                                             # both tracked
+    assert results["beyblade-x-scale-shark-4-50uf"].alertable is True
+    assert results["beyblade-x-arrow-wizard-4-80o"].alertable is False   # tracked, silent
 
 
 def test_empty_watchlist_alerts_on_everything(popsplanet_payload, fake_client):
@@ -153,10 +153,47 @@ def test_empty_watchlist_alerts_on_everything(popsplanet_payload, fake_client):
     assert all(r.alertable for r in results)
 
 
-def test_watchlist_is_case_insensitive_and_matches_codes(fake_client):
-    payload = {"products": [{"handle": "h", "title": "Beyblade X Sterling Wolf 3-80FB UX Starter Pack",
+def test_watchlist_handles_are_case_insensitive(fake_client):
+    payload = {"products": [{"handle": "beyblade-x-sterling-wolf-380fb",
+                             "title": "Beyblade X Sterling Wolf 3-80FB UX Starter Pack",
                              "variants": [{"price": "121.00", "available": True}]}]}
-    for term in ["sterling wolf", "3-80fb", "STERLING"]:
-        options = dict(OPTIONS, watchlist=[term])
-        r = list(ShopifyChecker("t", options, fake_client([payload])).check())[0]
-        assert r.alertable is True, term
+    options = dict(OPTIONS, watchlist=["  BEYBLADE-X-Sterling-Wolf-380FB  "])
+    r = list(ShopifyChecker("t", options, fake_client([payload])).check())[0]
+    assert r.alertable is True
+
+
+def test_a_title_term_does_not_match_a_handle(fake_client):
+    """Guards the design decision: handles are exact identifiers, so a loose
+    title phrase must NOT quietly work — otherwise the word-order and bundle
+    traps come back in through the side door."""
+    payload = {"products": [{"handle": "beyblade-x-scale-shark-4-50uf",
+                             "title": "Beyblade X Scale Shark 4-50UF UX Booster Pack",
+                             "variants": [{"price": "93.00", "available": True}]}]}
+    options = dict(OPTIONS, watchlist=["shark scale"])
+    r = list(ShopifyChecker("t", options, fake_client([payload])).check())[0]
+    assert r.alertable is False
+
+
+def test_unmatched_watchlist_handle_is_reported(fake_client, caplog):
+    """A mistyped handle fails silently — you just never hear about that item
+    again — so it has to be called out."""
+    payload = {"products": [{"handle": "real-handle", "title": "Thing",
+                             "variants": [{"price": "1.00", "available": True}]}]}
+    options = dict(OPTIONS, watchlist=["real-handle", "typo-handle"])
+    with caplog.at_level("WARNING"):
+        list(ShopifyChecker("t", options, fake_client([payload])).check())
+    assert "typo-handle" in caplog.text
+    assert "real-handle" not in caplog.text
+
+
+def test_unmatched_watchlist_is_not_reported_when_a_collection_failed():
+    """A failed collection legitimately explains an absence, so the typo
+    warning must not fire and send you chasing a non-existent typo."""
+    class Flaky:
+        def get_json(self, url):
+            raise RuntimeError("boom")
+
+    options = dict(OPTIONS, watchlist=["anything"])
+    checker = ShopifyChecker("t", options, Flaky())
+    list(checker.check())
+    assert checker.errors == 1

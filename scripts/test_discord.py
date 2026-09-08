@@ -77,10 +77,18 @@ def main(argv: list[str] | None = None) -> int:
     if len(body) > DISCORD_LIMIT:
         body = body[:DISCORD_LIMIT] + f"\n… truncated ({total} in stock in total)"
 
-    notifier.send(body)
+    sent = notifier.send(body)
     logger.info("total in stock across %d site(s): %d", len(configs), total)
     if not args.send:
         logger.info("dry run — pass --send to post this to Discord")
+        return 0
+    if not sent:
+        # Exit non-zero rather than let a silent no-op read as success. This
+        # script exists to prove alerting works; an unset webhook made an
+        # earlier run report "sent" while delivering nothing.
+        logger.error("NOTHING WAS SENT — check DISCORD_WEBHOOK_URL in .env")
+        return 1
+    logger.info("posted to Discord")
     return 0
 
 

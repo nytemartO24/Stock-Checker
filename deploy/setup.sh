@@ -36,9 +36,18 @@ echo "-- chromium ready"
 # --- secrets --------------------------------------------------------------
 if [[ ! -f .env ]]; then
   cp .env.example .env
-  echo "!! created .env from .env.example — FILL IN DISCORD_WEBHOOK_URL before going live"
+  echo "!! created .env from .env.example"
 fi
 chmod 600 .env
+
+# Check it rather than trust it. A blank webhook fails silently at send time
+# (the notifier logs a warning and moves on), which once let a test run
+# report success while delivering nothing.
+if ! grep -qE '^DISCORD_WEBHOOK_URL=https://' .env; then
+  echo "!! DISCORD_WEBHOOK_URL is not set in .env — alerts CANNOT be delivered."
+  echo "!! Fill it in, then re-run this script. Verify with:"
+  echo "!!   ./deploy/run.sh scripts/test_discord.py --send"
+fi
 
 mkdir -p logs state
 
