@@ -1,4 +1,9 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(wsl.exe -d kali-linux -- ssh vps:*)"
+    ]
+  },
   "hooks": {
     "PostToolUse": [
       {

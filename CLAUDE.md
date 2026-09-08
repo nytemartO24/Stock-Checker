@@ -175,6 +175,31 @@ site like any other.
   assumption, a design decision that didn't pan out), record it in
   `LESSONS.md` in one or two lines — see below.
 
+## VPS access
+
+The production VPS is reachable over key-based SSH with no password prompt.
+An SSH config alias lives in WSL at `/home/kali/.ssh/config`, so commands
+are written as:
+
+    wsl.exe -d kali-linux -- ssh vps '<command>'
+
+Verified 2026-09-08: git operations, log reads, and file writes under
+`/root` all work. The repo is at `/root/news-notifier` (the news-notifier
+pilot); Stock Checker is not deployed there yet.
+
+Notes for whoever runs this next:
+- The key lives only in WSL (`/home/kali/.ssh/id_ed25519`), not on the
+  Windows side. Copying it out is blocked by the permission classifier and
+  isn't needed — the alias above is enough.
+- Git Bash rewrites Linux-looking paths when passing them to `wsl.exe`.
+  Prefix with `MSYS_NO_PATHCONV=1` when a WSL-side absolute path is an
+  argument, or `tee /home/kali/...` becomes `C:/Program Files/Git/home/...`.
+- `wsl.exe` output can carry NUL bytes; pipe through `tr -d ' '` when the
+  result looks mangled.
+- ALWAYS dry-run against production first (omit `--send-discord`), and
+  don't `git pull` or overwrite state on the VPS without being asked — it
+  is running live and its state files are not in git.
+
 ## Self-updating this file
 
 This CLAUDE.md is expected to evolve as the project does. Whenever a
