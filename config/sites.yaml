@@ -45,7 +45,15 @@ sites:
     #     Scale" is titled "Scale Shark 4-50UF", so the plain name misses;
     #   * a term also matches multi-item BUNDLES containing that product.
     # The product code ("4-50UF", "3-80FB") is the reliable key.
-    watchlist: []
+    watchlist:
+      - beyblade-x-booster-scale-shark-450uf                # Scale Shark 4-50UF
+      - beyblade-x-starter-pack-sterling-wolf-380-fb-ux     # Sterling Wolf 3-80FB
+      - beyblade-x-starter-pack-reaper-incendio-t-470k-cx   # Reaper Incendio T 4-70K
+      # Handle does NOT contain the product name — this is Delta Unicorn PO
+      # 3-60GU. Proof that handles must be looked up, never derived.
+      - beyblade-x-starter-pack-guadalupe-mountains         # Delta Unicorn PO 3-60GU
+      # Tread Croc and Glare Cyclops are not stocked here, standalone or in a
+      # bundle, within the collections above.
 
   amazon:
     type: amazon
@@ -127,7 +135,13 @@ sites:
     #     Scale" is titled "Scale Shark 4-50UF", so the plain name misses;
     #   * a term also matches multi-item BUNDLES containing that product.
     # The product code ("4-50UF", "3-80FB") is the reliable key.
-    watchlist: []
+    watchlist:
+      - beyblade-x-scale-shark-4-50uf-ux-booster-pack       # Scale Shark 4-50UF
+      # Bundles are watched deliberately: a 4-pack containing Tread Croc went
+      # by unnoticed once, which is part of why this project exists.
+      - beyblade-x-tread-croc-tq-5-50gn-cx-whip-brachio-ow-5-70nr-cx-nether-incendio-z-ux-suppress-superion-0-70lp-bx-infinity-starter-pack-bundle
+      # This one contains BOTH Delta Unicorn and Glare Cyclops.
+      - beyblade-x-delta-unicorn-po-3-60gu-cx-glory-valkerion-lf-ux-seize-jaguar-hn-ux-glare-cyclops-7-55fb-bx-infinity-starter-pack-bundle
     # This store has ONE beyblade collection, mixing product generations, so
     # an unwanted line can only be dropped by title. EXCLUDE the old
     # generation rather than trying to include the current one by name:
