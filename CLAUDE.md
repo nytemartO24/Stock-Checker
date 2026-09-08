@@ -56,9 +56,9 @@ stock_checker/
     http.py                # shared politeness layer: UA, rate limiting, backoff — obeyed by BOTH transports
   config/
     sites.yaml          # which sites/products are enabled, check interval, etc. (no secrets)
-  state/                # runtime state, gitignored: one file per site,
-                        #   amazon/ sub-namespaced per market, plus
-                        #   amazon/_reference_prices.json (long-lived)
+  state/                # runtime state, gitignored: one file per site
+                        #   (amazon.json keys products as "<market>:<asin>"),
+                        #   plus amazon_reference_prices.json (long-lived)
   main.py                # entrypoint: single-run mode (for cron) — checks all enabled sites once
   run_loop.py            # entrypoint: polling-loop mode (for local dev)
   tests/
@@ -122,6 +122,17 @@ section once the real structure diverges intentionally.)
   modules should get at least a basic parsing test against a saved fixture
   — HTML for browser sites, JSON for API sites (don't hit the live site in
   tests).
+
+`SiteChecker` also carries `state_dir` (for a site's own auxiliary state,
+which today means Amazon's reference prices) and `errors`, a count of what
+the run failed to see. A non-zero `errors` means the results are an
+INCOMPLETE view, and `main.py` skips pruning state in that case — pruning
+against a partial view deletes products that were merely missed, and they
+then re-alert as new when they reappear.
+
+Browser transports obey the same politeness policy as HTTP ones via
+`core/http.PoliteClient.pacer`: a Playwright navigation is a request to the
+site like any other.
 
 ## Workflow expectations
 
@@ -198,7 +209,10 @@ entirely.
 `compare_at_price` is not reliably an RRP (some items have it equal to
 `price`), so don't treat it as one.
 
-**Amazon (`sites/amazon.py`)** — Playwright, ported from news-notifier's
+**Amazon (`sites/amazon/`)** — a package rather than one file: the browser
+plumbing, the market table and the price/reference logic are each
+substantial and independently testable. Still one unit per retailer.
+Playwright, ported from news-notifier's
 `pilot/eu_multimarket/`. Market is config, not a separate module. Carried
 over from that project: the `/-/en/` URL override with merged
 English+native month tables, delivery-location pinning (postcode on the
@@ -220,7 +234,7 @@ Price against a reference is the test; the seller name is context in the
 alert.
 
 **Reference price = the lowest FX-normalized price ever observed from an
-Amazon-sold offer**, persisted in `state/amazon/_reference_prices.json`,
+Amazon-sold offer**, persisted in `state/amazon_reference_prices.json`,
 kept out of per-market alert state so a state reset does not destroy it.
 Flag anything above `reference * scalp_multiplier` (default 2.0, set in
 `sites.yaml`). Scalping on this line runs 4-5x — the motivating example was
@@ -236,18 +250,33 @@ far less than having a trustworthy reference.
 - Cold-start poisoning is the real trap: if a product's first sighting IS
   the scalp price, that becomes the reference. So only ever record a
   reference from an Amazon-sold offer, keep it provisional (and say so)
-  until corroborated, and allow an optional `max_price` override in the
-  watchlist. `max_price` is deliberately NOT required up front —
+  until corroborated, and allow an optional `max_price_sek` override in
+  `sites.yaml`. That override is deliberately NOT required up front —
   auto-reference first, hand-set ceilings only where it misbehaves.
+- **Corroboration is counted in DISTINCT prices, not sightings.** At a
+  half-hourly cadence, re-reading the same unchanged price would clear the
+  provisional flag within an hour while confirming nothing. A reference
+  stops being provisional only once a second, different Amazon-sold price
+  has been seen.
+- An **unpinned delivery location** makes a market's results describe
+  wherever Amazon guessed. That marks the run incomplete (so state is not
+  pruned against it) and adds a note to every alert from that market,
+  rather than being only a log line nothing acts on.
 - Seed reference prices for currently-tracked ASINs from news-notifier's
   existing per-market state to skip the cold-start window. That seed
   correctly ignores the scalped example, whose only observation is
   third-party.
-- Currency normalization is needed only where a site can't quote SEK
-  directly. The Shopify sites are pinned to `country=SE` and so already
-  report SEK; Amazon quotes per-market. A static FX table in config is
-  enough for the rest: this needs 2x discrimination, not accounting
-  accuracy.
+- **Never assume a currency — read it off the page.** With delivery pinned
+  to Sweden, amazon.de quotes `SEK766.25`, not euros, so a per-market
+  currency table would convert an already-SEK figure as though it were EUR
+  and overstate it ~11x, flagging every cross-border listing as a scalp.
+  `prices.detect_currency()` reads the symbol/code from the price string and
+  falls back to the market default only when the page says nothing. This is
+  the same mistake as trusting a Shopify store's configured currency; it has
+  now cost us twice.
+- FX normalization to SEK uses a static table in `prices.py`. Deliberately
+  approximate: this needs 2x discrimination, not accounting accuracy, and a
+  static table cannot fail a run the way a live rate lookup could.
 
 ## Open questions / not yet decided
 

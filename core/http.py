@@ -36,6 +36,36 @@ class RateLimited(Exception):
     """Raised when a host keeps refusing after the retry budget is spent."""
 
 
+class Pacer:
+    """Enforces a randomised minimum gap between actions against one host.
+
+    Extracted from PoliteClient because the browser transport needs exactly
+    the same policy and cannot use an httpx client to get it — a Playwright
+    navigation is a request to the site like any other, and the
+    polite-scraper principle applies per site, not per library.
+    """
+
+    def __init__(self, min_delay: float = 1.0, max_delay: float = 3.0) -> None:
+        if min_delay > max_delay:
+            raise ValueError(f"min_delay {min_delay} exceeds max_delay {max_delay}")
+        self.min_delay = min_delay
+        self.max_delay = max_delay
+        self._last_at: float | None = None
+
+    def wait(self) -> None:
+        """Sleep so consecutive actions are never closer than min_delay.
+
+        Randomised: a perfectly regular interval is a bot signature, and the
+        jitter costs nothing.
+        """
+        target = random.uniform(self.min_delay, self.max_delay)
+        if self._last_at is not None:
+            remaining = target - (time.monotonic() - self._last_at)
+            if remaining > 0:
+                time.sleep(remaining)
+        self._last_at = time.monotonic()
+
+
 class PoliteClient:
     """An httpx client that paces itself and backs off when asked to.
 
@@ -54,15 +84,12 @@ class PoliteClient:
         max_retries: int = 3,
         accept_language: str = "en-GB,en;q=0.9",
     ) -> None:
-        if min_delay > max_delay:
-            raise ValueError(f"min_delay {min_delay} exceeds max_delay {max_delay}")
-        self.min_delay = min_delay
+        self.pacer = Pacer(min_delay, max_delay)
         self.max_delay = max_delay
         # A configured 0 means "don't retry", which is still one attempt.
         # Taken literally it would skip the request loop entirely and then
         # crash reporting a response that was never fetched.
         self.max_retries = max(1, max_retries)
-        self._last_request_at: float | None = None
         self._client = httpx.Client(
             headers={
                 "User-Agent": user_agent,
@@ -82,25 +109,11 @@ class PoliteClient:
     def close(self) -> None:
         self._client.close()
 
-    def _pace(self) -> None:
-        """Sleep so consecutive requests are never closer than min_delay.
-
-        Randomised: a perfectly regular interval is a bot signature, and the
-        jitter costs nothing.
-        """
-        target = random.uniform(self.min_delay, self.max_delay)
-        if self._last_request_at is not None:
-            elapsed = time.monotonic() - self._last_request_at
-            remaining = target - elapsed
-            if remaining > 0:
-                time.sleep(remaining)
-        self._last_request_at = time.monotonic()
-
     def get(self, url: str) -> httpx.Response:
         """GET with pacing and backoff. Raises on a non-2xx that isn't retryable."""
         delay = max(self.max_delay, 2.0)
         for attempt in range(1, self.max_retries + 1):
-            self._pace()
+            self.pacer.wait()
             response = self._client.get(url)
             if response.status_code not in BACKOFF_STATUSES:
                 response.raise_for_status()

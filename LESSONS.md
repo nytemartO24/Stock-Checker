@@ -32,3 +32,30 @@ CLAUDE.md and trim this file.
   `max_retries: 0` config crashing with UnboundLocalError. All three were
   invisible to the passing test suite because the tests only covered the
   happy path.
+
+- 2026-09-08: Hardcoded a currency per Amazon marketplace (de -> EUR) and
+  the fixture immediately disproved it: with delivery pinned to Sweden,
+  amazon.de quotes `SEK766.25`. Converting that as EUR would have inflated
+  it ~11x and flagged every cross-border listing as a scalp. Fixed with
+  `detect_currency()`, reading the symbol off the price string. Second time
+  in one session that assuming a currency was wrong (see the Shopify entry
+  above) - if a price is displayed, the currency is displayed with it, so
+  read it.
+
+- 2026-09-08: Wrote the Amazon "is this page about my country?" guard as
+  `delivery_country not in page_text`. Dead code: once the delivery location
+  is pinned, the glow ingress names the destination on EVERY page, so the
+  condition was never true and an amazon.de page dispatching to the United
+  States would have been read as a genuine in-stock result. The pilot got
+  this right by parsing the country out of the banner with a regex anchored
+  on "showing you items that dispatch to"; I replaced proven code with a
+  looser check. My test passed only because the synthetic fixture omitted
+  the glow ingress that real pages always carry - when a fixture is
+  hand-written, check it against a real page for what it is MISSING, not
+  just what it contains.
+- 2026-09-08: An empty Amazon watchlist yielded no products and reported no
+  error, so the run looked like a complete view of zero products and pruned
+  all 24 stored entries. Commenting out a watchlist to pause tracking - the
+  exact convention the pilot used - would have caused an alert storm on
+  restore. Fixed at both levels: the checker reports an error, and
+  `SiteState.prune()` now refuses to prune against an entirely empty view.

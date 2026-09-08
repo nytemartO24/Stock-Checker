@@ -35,6 +35,41 @@ sites:
       - beyblade-x-starter-pack
       - beyblade-x-double-pack
 
+  amazon:
+    type: amazon
+    enabled: true
+    # Matches the news-notifier pilot's production markets. nl/be/it/pl are
+    # supported in markets.py and can be added by name.
+    markets: [se, de, fr, es]
+    # Where deliveries are quoted TO. Every market is pinned to this one
+    # destination so their answers mean the same thing — without it Amazon
+    # geolocates a different country per marketplace and the results stop
+    # being comparable. Postcode applies to the domestic market only.
+    delivery_country: Sweden
+    delivery_postcode: "37116"
+    # A listing above reference * this is flagged as a suspected scalp.
+    # Scalping on this line runs 4-5x, so 2.0 has plenty of margin.
+    scalp_multiplier: 2.0
+    # false = suppress the notification instead of tagging it. Detection,
+    # logging and state recording continue either way.
+    alert_on_suspected_scalp: true
+    headless: true
+    # Optional per-ASIN ceilings in SEK, for products where the automatic
+    # reference misbehaves. Deliberately empty: auto-reference first.
+    max_price_sek: {}
+    watchlist:
+      - B0FCYT9DG6  # Shark Scale
+      - B0H1RKP3KL  # Tread Croc
+      - B0H1RFQ9L3  # Glare Cyclops
+      - B0DNFQ99JW  # Reaper Incendio
+      - B0DN6YLGRX  # Silver Wolf
+      - B0H95JF9D9  # Delta Unicorn
+    rate_limit:
+      # A browser page-load is far heavier than a JSON request, and this is
+      # 24 of them per run (6 ASINs x 4 markets).
+      min_delay_seconds: 2.0
+      max_delay_seconds: 5.0
+
   toysnowman:
     type: shopify
     enabled: true

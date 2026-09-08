@@ -36,7 +36,7 @@ def _config():
 
 
 def _run(monkeypatch, tmp_path, checker, notifier=None):
-    monkeypatch.setattr(main, "build_checker", lambda config, client: checker)
+    monkeypatch.setattr(main, "build_checker", lambda config, client, state_dir=None: checker)
     return main.check_site(_config(), tmp_path, notifier or DiscordNotifier("", dry_run=True))
 
 

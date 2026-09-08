@@ -86,12 +86,20 @@ def test_site_without_type_is_rejected(tmp_path: Path):
 def test_real_config_loads_and_is_wired_to_known_types():
     from sites import CHECKER_TYPES
 
+    from sites import LAZY_CHECKER_TYPES
+
     sites = load_config(Path(__file__).resolve().parent.parent / "config" / "sites.yaml")
     assert sites, "config/sites.yaml defines no sites"
+    known = set(CHECKER_TYPES) | set(LAZY_CHECKER_TYPES)
     for site in sites:
-        assert site.type in CHECKER_TYPES
-        assert site.options.get("domain")
-        assert site.options.get("collections")
-        # An unpinned market makes `currency` a guess rather than a fact.
-        assert site.options.get("country"), f"{site.name} must pin a country"
-        assert site.options.get("currency"), f"{site.name} must declare a currency"
+        assert site.type in known, f"{site.name} has unknown type {site.type}"
+        if site.type == "shopify":
+            assert site.options.get("domain")
+            assert site.options.get("collections")
+            # An unpinned market makes `currency` a guess, not a fact.
+            assert site.options.get("country"), f"{site.name} must pin a country"
+            assert site.options.get("currency"), f"{site.name} must declare a currency"
+        if site.type == "amazon":
+            assert site.options.get("markets"), f"{site.name} must name markets"
+            assert site.options.get("watchlist"), f"{site.name} must have a watchlist"
+            assert site.options.get("delivery_country"), f"{site.name} must pin a destination"

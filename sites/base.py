@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Iterator
 
 
@@ -52,10 +53,13 @@ class SiteChecker(ABC):
     """One retailer. Constructed with its config and a client; `check()` is
     the only thing core calls."""
 
-    def __init__(self, name: str, options: dict, client) -> None:
+    def __init__(self, name: str, options: dict, client, state_dir: Path | None = None) -> None:
         self.name = name
         self.options = options
         self.client = client
+        self.state_dir = state_dir
+        """Where a site may keep auxiliary state of its own, beyond the
+        alert state core/storage.py owns (Amazon's reference prices)."""
         self.errors = 0
         """Count of things this run failed to see. Non-zero means the yielded
         results are an INCOMPLETE view of the site, which callers must know:

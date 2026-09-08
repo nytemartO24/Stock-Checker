@@ -49,7 +49,7 @@ def check_site(config: SiteConfig, state_dir: Path, notifier: DiscordNotifier) -
         timeout=config.timeout,
         max_retries=config.max_retries,
     ) as client:
-        checker = build_checker(config, client)
+        checker = build_checker(config, client, state_dir)
         for result in checker.check():
             seen.add(result.product_id)
             in_stock += result.in_stock

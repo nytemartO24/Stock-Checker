@@ -87,6 +87,16 @@ class SiteState:
         whitelist — orphans from earlier iterations, growing unbounded and
         carrying stale prices. Cheap to prevent, tedious to clean up later.
         """
+        if not keep and self._entries:
+            # Seeing nothing at all is a failure signature, not evidence
+            # that every product vanished. Callers already skip pruning on
+            # a reported error; this catches the paths that report none
+            # (an emptied watchlist, a renamed collection).
+            logger.warning(
+                "%s: refusing to prune %d entry/entries against an empty view",
+                self.path.name, len(self._entries),
+            )
+            return 0
         stale = set(self._entries) - keep
         for product_id in stale:
             del self._entries[product_id]
