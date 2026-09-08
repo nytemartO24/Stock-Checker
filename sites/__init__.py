@@ -14,9 +14,14 @@ from core.config import SiteConfig
 from core.http import PoliteClient
 from sites.base import SiteChecker
 from sites.shopify import ShopifyChecker
+from sites.woocommerce import WooCommerceChecker
 
 CHECKER_TYPES: dict[str, type[SiteChecker]] = {
     "shopify": ShopifyChecker,
+    # Not lazy like amazon: this only needs BeautifulSoup, which is a declared
+    # dependency and cheap to import. Amazon is lazy because it pulls in
+    # Playwright.
+    "woocommerce": WooCommerceChecker,
 }
 
 

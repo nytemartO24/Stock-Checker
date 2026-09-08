@@ -98,14 +98,22 @@ section once the real structure diverges intentionally.)
 ## Conventions
 
 - Python 3.11+, type hints on all function signatures.
-- Two transports, both first-class, chosen per site:
+- Three transports, all first-class, chosen per site:
   - **JSON API** (`httpx`, sync) wherever a site exposes one — always
     prefer it. Shopify stores do: `/products.json?limit=250` returns
     `available`, `price` and `compare_at_price` per variant, so there is
     nothing to parse and no browser to run.
+  - **HTTP + HTML** (`httpx` + BeautifulSoup) where a site renders what we
+    need server-side but exposes no usable API. gameshop.se is WooCommerce:
+    its Store API answers 403 (Cloudflare) and the WordPress core API carries
+    no price or stock, but each product tile in the listing HTML is stamped
+    `instock`/`outofstock` by the shop itself — as good a signal as Shopify's
+    `available`, and no browser required.
   - **Browser** (Playwright) only where the data is injected client-side.
     Amazon is confirmed to need it: delivery, seller and price blocks all
-    arrive after `domcontentloaded`.
+    arrive after `domcontentloaded`. This is the expensive one — reach for it
+    last, and only after checking whether the server-rendered HTML already
+    answers the question.
   BeautifulSoup is for browser-rendered HTML, not a default. Whichever
   transport a site uses it must obey `core/http.py`'s politeness policy
   (UA, delay, backoff) — `core/http.py` owns that policy for both, while

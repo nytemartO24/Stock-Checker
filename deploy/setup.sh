@@ -29,7 +29,8 @@ echo "-- python deps installed ($(./.venv/bin/python --version))"
 # client-side, and pinning the delivery location means driving a modal).
 # The download is shared across projects via ~/.cache/ms-playwright, so this
 # is usually a no-op on a box already running news-notifier.
-./.venv/bin/python -m pip install --quiet playwright beautifulsoup4
+# playwright and beautifulsoup4 come from requirements.txt above; only the
+# browser binary needs a separate fetch.
 ./.venv/bin/python -m playwright install chromium
 echo "-- chromium ready"
 

@@ -1,11 +1,12 @@
 # Runtime
 httpx>=0.27
 PyYAML>=6.0
+# HTML parsing: needed by the Amazon module and by any WooCommerce store,
+# which is parsed from server-rendered listing pages.
+beautifulsoup4>=4.12
+# Browser transport: Amazon only. `playwright install chromium` still has to
+# run separately to fetch the browser itself — deploy/setup.sh does that.
+playwright>=1.40
 
 # Dev / tests
 pytest>=8.0
-
-# Added when the Amazon site module lands (it needs a real browser and HTML
-# parsing; the Shopify checkers need neither):
-#   beautifulsoup4
-#   playwright

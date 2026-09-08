@@ -132,6 +132,42 @@ sites:
       min_delay_seconds: 2.0
       max_delay_seconds: 5.0
 
+  gameshop:
+    type: woocommerce
+    enabled: true
+    domain: gameshop.se
+    # Whatever URL lists the products. There is no Beyblade category here —
+    # products sit under generic ones (leksaker, funko-pop) — so a search is
+    # the right list. It returns 153 products over 4 pages, in-stock first
+    # then out-of-stock, which matters: we must SEE a product while it is
+    # unavailable in order to notice it coming back.
+    listing_path: /?s=beyblade&post_type=product
+    currency: SEK
+    currency_symbol: "kr"
+    # Its Store API is 403 (Cloudflare) and the WordPress core API carries no
+    # price or stock, so this is parsed from the server-rendered HTML. No
+    # browser needed — WooCommerce stamps instock/outofstock on each tile.
+    #
+    # NOTE the listing includes Funko Pop figures ("POP Beyblade X ..."). If
+    # those are not wanted, add:
+    #   title_exclude:
+    #     - "pop "
+    title_exclude:
+      # Same call already made for toysnowman: Burst is a genuinely different
+      # product line. This store mixes it into the same listing.
+      - beyblade burst
+    watchlist:
+      - beyblade-x-scale-shark-4-50uf-attack                            # Scale Shark 4-50UF
+      - beyblade-x-sterling-wolf-3-80-fb-ux-starter-pack                # Sterling Wolf 3-80FB
+      - beyblade-x-starter-pack-cx-reaper-incendio-t-4-70k-balance-type  # Reaper Incendio T
+      # Tread Croc, Delta Unicorn and Glare Cyclops are not stocked here at
+      # all — recorded so their absence reads as checked, not forgotten.
+    alert_on_new_products: true
+    rate_limit:
+      # HTML pages are heavier than a JSON call, and this is 4 of them.
+      min_delay_seconds: 1.5
+      max_delay_seconds: 4.0
+
   toysnowman:
     type: shopify
     enabled: true
