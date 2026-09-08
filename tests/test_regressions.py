@@ -75,7 +75,7 @@ def test_failed_send_leaves_state_so_the_alert_retries(monkeypatch, tmp_path):
     assert notifier.attempts == 1
     # Still recorded as out of stock, so the transition is still pending.
     assert json.loads(state_file.read_text(encoding="utf-8"))["p1"]["in_stock"] is False
-    assert SiteState(state_file).should_notify(R("p1", in_stock=True)) is True
+    assert SiteState(state_file).alert_kind(R("p1", in_stock=True)) == "restock"
 
 
 def test_max_retries_zero_does_not_crash():

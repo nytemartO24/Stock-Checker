@@ -49,21 +49,32 @@ class SiteState:
                 logger.warning("%s unreadable (%s) — treating as first run", path, e)
                 self.is_first_run = True
 
-    def should_notify(self, result: StockResult) -> bool:
-        """True when this result is a transition worth telling the user about.
+    def alert_kind(self, result: StockResult) -> str | None:
+        """Why this result is worth telling the user about: "new", "restock",
+        or None.
 
-        Out-of-stock -> in-stock is the event. Staying in stock is not, or
-        every run would re-alert for the same thing.
+        Two distinct events, because they need different gates:
+
+        "restock" — a watched product came back. Gated on `alertable`, so a
+        watchlist keeps this quiet; with 161 products tracked, alerting on
+        every restock is noise.
+
+        "new" — a product never seen before. NOT gated on the watchlist, and
+        that is the whole point: you cannot watchlist a product that does not
+        exist yet. A four-item bundle appeared and sold out unnoticed once,
+        and a watchlist alone would have missed it again. Reported whatever
+        its stock state, since knowing a product exists is what lets you
+        decide to watch it. New products are inherently rare, so this does
+        not reintroduce the restock noise.
         """
-        if not result.in_stock or not result.alertable:
-            return False
         if self.is_first_run:
-            return False
+            return None
         previous = self._entries.get(result.product_id)
         if previous is None:
-            # Genuinely new product, already purchasable — worth knowing.
-            return True
-        return not previous.get("in_stock", False)
+            return "new"
+        if not result.in_stock or not result.alertable:
+            return None
+        return "restock" if not previous.get("in_stock", False) else None
 
     def record(self, result: StockResult) -> None:
         previous = self._entries.get(result.product_id, {})

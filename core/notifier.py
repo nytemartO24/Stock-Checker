@@ -45,6 +45,22 @@ def format_stock_alert(site_name: str, result) -> str:
     return "\n".join(lines)
 
 
+def format_new_product_alert(site_name: str, result) -> str:
+    """A product that has never been seen before.
+
+    Deliberately distinct from a restock: this is "this exists now, do you
+    want it?", so it states the stock position rather than assuming the thing
+    is buyable, and it is worth sending even when it is not.
+    """
+    state = "in stock" if result.in_stock else "not in stock yet"
+    lines = [f"🆕 **New product on {site_name}** ({state}): {truncate(result.product_name)}"]
+    if result.price_text:
+        lines.append(result.price_text)
+    lines.extend(f"⚠️ {note}" for note in result.notes)
+    lines.append(result.url)
+    return "\n".join(lines)
+
+
 class DiscordNotifier:
     """Posts to a Discord webhook, or logs what it would have posted.
 

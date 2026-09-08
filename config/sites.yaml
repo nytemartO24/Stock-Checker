@@ -45,6 +45,11 @@ sites:
     #     Scale" is titled "Scale Shark 4-50UF", so the plain name misses;
     #   * a term also matches multi-item BUNDLES containing that product.
     # The product code ("4-50UF", "3-80FB") is the reliable key.
+    # A product never seen before alerts ONCE, regardless of the watchlist —
+    # you cannot watchlist something that does not exist yet, which is how a
+    # four-item bundle was missed. It is recorded on that run, so it is never
+    # "new" again. Set false if a store bulk-adding stock gets noisy.
+    alert_on_new_products: true
     watchlist:
       - beyblade-x-booster-scale-shark-450uf                # Scale Shark 4-50UF
       - beyblade-x-starter-pack-sterling-wolf-380-fb-ux     # Sterling Wolf 3-80FB
@@ -135,6 +140,11 @@ sites:
     #     Scale" is titled "Scale Shark 4-50UF", so the plain name misses;
     #   * a term also matches multi-item BUNDLES containing that product.
     # The product code ("4-50UF", "3-80FB") is the reliable key.
+    # A product never seen before alerts ONCE, regardless of the watchlist —
+    # you cannot watchlist something that does not exist yet, which is how a
+    # four-item bundle was missed. It is recorded on that run, so it is never
+    # "new" again. Set false if a store bulk-adding stock gets noisy.
+    alert_on_new_products: true
     watchlist:
       - beyblade-x-scale-shark-4-50uf-ux-booster-pack       # Scale Shark 4-50UF
       # Bundles are watched deliberately: a 4-pack containing Tread Croc went

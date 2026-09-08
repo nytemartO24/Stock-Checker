@@ -21,7 +21,7 @@ from pathlib import Path
 from core.config import SiteConfig, load_config
 from core.http import PoliteClient
 from core.logging_setup import configure
-from core.notifier import DiscordNotifier, format_stock_alert
+from core.notifier import DiscordNotifier, format_new_product_alert, format_stock_alert
 from core.storage import SiteState
 from sites import build_checker
 
@@ -53,8 +53,14 @@ def check_site(config: SiteConfig, state_dir: Path, notifier: DiscordNotifier) -
         for result in checker.check():
             seen.add(result.product_id)
             in_stock += result.in_stock
-            if state.should_notify(result):
-                sent = notifier.send(format_stock_alert(config.name, result))
+            kind = state.alert_kind(result)
+            # A brand-new product bypasses the watchlist on purpose (see
+            # SiteState.alert_kind); this is the switch if that gets noisy.
+            if kind == "new" and not config.options.get("alert_on_new_products", True):
+                kind = None
+            if kind:
+                render = format_new_product_alert if kind == "new" else format_stock_alert
+                sent = notifier.send(render(config.name, result))
                 if sent or notifier.dry_run:
                     alerts += 1  # in dry-run, count what a real run would send
                 else:
