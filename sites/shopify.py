@@ -31,7 +31,29 @@ MAX_PAGES = 10   # Guard against paginating forever on a huge store.
 
 class ShopifyChecker(SiteChecker):
     """Options: domain (required), collections (required), base_path,
-    currency, currency_symbol."""
+    country, currency, currency_symbol, title_include, title_exclude."""
+
+    @property
+    def title_include(self) -> list[str]:
+        """Keep only products whose title contains one of these (case
+        insensitive). Empty means keep everything."""
+        return [t.lower() for t in (self.options.get("title_include") or [])]
+
+    @property
+    def title_exclude(self) -> list[str]:
+        """Drop products whose title contains any of these."""
+        return [t.lower() for t in (self.options.get("title_exclude") or [])]
+
+    def wanted(self, title: str) -> bool:
+        """A store groups by its own logic, not ours: toysnowman files two
+        older-generation products under `beyblade` alongside Beyblade X, and
+        it has only one collection so they cannot be excluded by collection
+        choice. Filtered products never enter the result stream, so they are
+        also pruned from state on the next clean run."""
+        low = (title or "").lower()
+        if any(bad in low for bad in self.title_exclude):
+            return False
+        return not self.title_include or any(good in low for good in self.title_include)
 
     @property
     def domain(self) -> str:
@@ -93,7 +115,7 @@ class ShopifyChecker(SiteChecker):
                     self.errors += 1
                     logger.exception("[%s] skipping malformed product entry: %r", self.name, product)
                     continue
-                if result is not None:
+                if result is not None and self.wanted(result.product_name):
                     seen.add(result.product_id)
                     yield result
             if len(products) < PAGE_SIZE:

@@ -104,3 +104,11 @@ sites:
     currency_symbol: "kr"
     collections:
       - beyblade
+    # This store has ONE beyblade collection, mixing product generations, so
+    # an unwanted line can only be dropped by title. EXCLUDE the old
+    # generation rather than trying to include the current one by name:
+    # "BBX" is Takara Tomy's branding for Beyblade X, so a `beyblade x`
+    # include-filter silently dropped a product that qualifies. Beyblade
+    # Burst is the only genuinely different line in here.
+    title_exclude:
+      - beyblade burst

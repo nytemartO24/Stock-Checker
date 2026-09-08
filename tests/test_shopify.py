@@ -95,3 +95,38 @@ def test_one_bad_collection_does_not_lose_the_others(popsplanet_payload):
 def test_product_without_handle_is_skipped(fake_client):
     payload = {"products": [{"id": 1, "title": "No handle", "variants": [{"price": "1.00", "available": True}]}]}
     assert list(_checker(fake_client([payload])).check()) == []
+
+
+def test_title_exclude_drops_only_the_old_generation(popsplanet_payload, fake_client):
+    """toysnowman mixes generations in one collection, so title is the only
+    lever. "BBX" is Takara Tomy's branding for Beyblade X and MUST survive —
+    an earlier `beyblade x` include-filter silently dropped it. Only
+    Beyblade Burst is a different line."""
+    payload = {"products": [
+        {"handle": "x", "title": "Beyblade X Tide Whale 5-80E Booster Pack",
+         "variants": [{"price": "93.00", "available": True}]},
+        {"handle": "bbx", "title": "Beyblade BBX Beat Tyranno Knife Shinobi Battle Top",
+         "variants": [{"price": "164.00", "available": True}]},
+        {"handle": "burst", "title": "Beyblade Burst QuadStrike Thunder Edge Battle Set",
+         "variants": [{"price": "462.00", "available": True}]},
+    ]}
+    options = dict(OPTIONS, title_exclude=["beyblade burst"])
+    results = list(ShopifyChecker("toysnowman", options, fake_client([payload])).check())
+    assert [r.product_id for r in results] == ["x", "bbx"]
+
+
+def test_title_exclude_wins_over_include(fake_client):
+    payload = {"products": [
+        {"handle": "a", "title": "Beyblade X Official Winder Launcher Accessory",
+         "variants": [{"price": "93.00", "available": True}]},
+        {"handle": "b", "title": "Beyblade X Tide Whale 5-80E Booster Pack",
+         "variants": [{"price": "93.00", "available": True}]},
+    ]}
+    options = dict(OPTIONS, title_include=["beyblade x"], title_exclude=["launcher"])
+    results = list(ShopifyChecker("t", options, fake_client([payload])).check())
+    assert [r.product_id for r in results] == ["b"]
+
+
+def test_no_title_filters_keeps_everything(popsplanet_payload, fake_client):
+    results = list(_checker(fake_client([popsplanet_payload])).check())
+    assert len(results) == 3
