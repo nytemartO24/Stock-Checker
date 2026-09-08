@@ -292,6 +292,34 @@ domestic market, country picker elsewhere, no cross-fallback), scoped
 extraction (never a whole-page regex), and the named outcome taxonomy in
 which UNKNOWN means "we did not understand this page", not "no stock".
 
+### Adding a store
+
+```bash
+python scripts/audit_store.py <any URL on the store> --match beyblade
+```
+
+It reports whether the store is Shopify, every collection matching the
+keyword with **sample titles**, the currency the market resolves to, and a
+ready-to-paste `sites.yaml` block. Re-run with
+`--collections a,b,c` once you have decided which to keep.
+
+**It does not choose for you, and must not start doing so.** A store groups
+by its own logic: popsplanet files anime merchandise and launcher
+accessories under "beyblade" next to the actual toys, so an earlier version
+that maximised product count "found" 38 extra products that were
+deliberately excluded. Coverage is not the goal — the user's filter is.
+Overlap between collections is reported as advisory only (a fully-covered
+collection costs one request per run and adds nothing, since the checker
+dedupes by handle), but whether to include one is a judgement about content.
+
+Currently tracked: popsplanet's `beyblade-x-booster` / `-starter-pack` /
+`-double-pack` (102 products, EUR) and toysnowman's `beyblade` (60, SEK).
+A store that is not Shopify needs its own module — see the transport rules
+in Conventions.
+
+New products need no special handling: an unseen handle has no stored
+state, so it alerts the first time it appears in stock.
+
 ### In stock, and the scalper problem
 
 "In stock" means **available for purchase or pre-order**. On Shopify that is
