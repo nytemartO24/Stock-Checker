@@ -68,7 +68,8 @@ def suggested_name(origin: str) -> str:
     return name or "store"
 
 
-def audit(url: str, match: str, country: str, only: str | None = None) -> int:
+def audit(url: str, match: str, country: str, only: str | None = None,
+          find: str | None = None) -> int:
     origin, base_path = split_base(url)
     base = origin + base_path
     wanted = [h.strip() for h in (only or "").split(",") if h.strip()]
@@ -106,6 +107,47 @@ def audit(url: str, match: str, country: str, only: str | None = None) -> int:
         if not hits:
             print(f"\nNo collections matching {match!r}. Try a broader --match.")
             return 1
+
+        if find:
+            # Handles are per-store, so a Shopify watchlist cannot be shared
+            # between stores the way ONE ASIN covers every Amazon market.
+            # This is the lookup step: find the exact handle once, paste it
+            # into that store's watchlist.
+            terms = [t.strip().lower() for t in find.split(",") if t.strip()]
+            print()
+            print(f"searching {len(hits)} collection(s) for: {', '.join(terms)}")
+            print()
+            found = {}
+            for c in sorted(hits, key=lambda c: c["handle"]):
+                try:
+                    response = client.get(
+                        f"{base}/collections/{c['handle']}/products.json"
+                        f"?limit={PAGE}&page=1&country={country}")
+                    response.raise_for_status()
+                    products = response.json()["products"]
+                except Exception:
+                    continue
+                for product in products:
+                    title = product.get("title") or ""
+                    for term in terms:
+                        if term in title.lower():
+                            variants = product.get("variants") or []
+                            stock = "IN STOCK" if any(v.get("available") for v in variants) else "out"
+                            price = (variants[0].get("price") if variants else "") or ""
+                            found.setdefault(product["handle"], (term, title, f"{price} {stock}"))
+            for term in terms:
+                matches = [(h, v) for h, v in found.items() if v[0] == term]
+                print(f"  {term!r}: {len(matches)} match(es)")
+                for handle, (_, title, meta) in matches:
+                    print(f"      handle: {handle}")
+                    print(f"              {title[:64]}  [{meta}]")
+                if not matches:
+                    print("      (nothing — try a product CODE like 4-50UF, or one word)")
+            print()
+            print("--- watchlist entries for this store ---")
+            for handle in sorted(found):
+                print(f"      - {handle}")
+            return 0
 
         print(f"\ncollections matching {match!r}: {len(hits)}")
         print("Sample titles are shown so you can judge relevance yourself — a")
@@ -172,10 +214,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--match", default="beyblade",
                         help="only collections whose handle/title contains this")
     parser.add_argument("--country", default="SE", help="market to price in (default SE)")
+    parser.add_argument("--find",
+                        help="comma-separated product terms; prints the exact HANDLES to "
+                             "paste into that store's watchlist")
     parser.add_argument("--collections",
                         help="comma-separated handles to report and emit (default: all matches)")
     args = parser.parse_args(argv)
-    return audit(args.url, args.match, args.country, args.collections)
+    return audit(args.url, args.match, args.country, args.collections, args.find)
 
 
 if __name__ == "__main__":
