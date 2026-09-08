@@ -351,6 +351,41 @@ New products need no special handling for alerting: an unseen handle has no
 stored state, so a watchlisted one alerts the first time it appears in
 stock.
 
+### Delivery dates (Amazon only)
+
+A long estimate is itself a form of unavailability: an add-to-cart button and
+a date six months out is not something you can have. So the date is part of
+the availability answer, not decoration.
+
+- Extraction is scoped to a matched delivery container, NEVER the whole page.
+  A page-wide search matches "Reviewed in Spain on 21 January 2019", and
+  because that carries an explicit year the assume-next-year correction never
+  fires, so a stale unrelated date sails through looking real.
+- Extracted dates are range-checked (0..400 days) before being stored. A bogus
+  date is worse than none: it becomes the baseline a future alert fires
+  against.
+- **The baseline is the date last ALERTED about, not last seen.** Comparing
+  against the last reading fails two ways and Amazon does both: a date
+  flickering between 22 and 23 February pings every time, and a date creeping
+  earlier one day at a time never pings at all because no single step clears
+  `min_improvement_days`. Anchoring on the last alerted date lets small moves
+  accumulate, then re-anchors. Slipping later re-anchors silently — you are
+  not pinged for bad news, but future improvements are judged against what is
+  actually promised now.
+- `max_delivery_days` (90) treats a further-out estimate as NOT in stock. It
+  sets `in_stock` false rather than muting the alert, and that choice is the
+  mechanism: the estimate later coming inside the window then reads as an
+  ordinary restock, so you are told when the item becomes actually available.
+  Muting via `alertable` would be worse twice over — it would also gag the
+  date-moved-earlier alert, the very signal that matters. Nothing is hidden:
+  the alert says it was orderable but too far out, and names the date.
+
+`StockResult.alert_reason` is how a site REQUESTS an alert core cannot judge —
+the mirror of `alertable` letting it veto one. A date moving earlier is not a
+stock transition, so no rule in `core/storage.py` could ever surface it.
+`alert_kind` orders these as new -> veto -> site -> restock, so a suppressed
+listing cannot reach you by the side door of a date change.
+
 ### In stock, and the scalper problem
 
 "In stock" means **available for purchase or pre-order**. On Shopify that is

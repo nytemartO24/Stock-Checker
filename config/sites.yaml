@@ -76,6 +76,14 @@ sites:
     # markets validate the field against their own country and can only take
     # a country selection).
     delivery_postcode: ""
+    # An estimate further out than this is treated as NOT available yet: an
+    # add-to-cart button and a date six months away is not something you can
+    # have. It sets in_stock false rather than just muting the alert, so the
+    # date coming inside the window reads as a normal restock and you are told
+    # when the item becomes actually available. The listing still reports its
+    # real date, and the alert says plainly that it was orderable but too far
+    # out. Set to 0 or remove to disable.
+    max_delivery_days: 90
     # How many days earlier a delivery estimate must move before it pings.
     # Amazon nudges its estimates by a day constantly, so a low value here is
     # a spam machine. Measured against the last date you were ALERTED about,

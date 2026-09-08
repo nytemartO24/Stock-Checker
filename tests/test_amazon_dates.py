@@ -9,6 +9,7 @@ import datetime
 import pytest
 
 from core.storage import SiteState
+from sites.amazon import apply_delivery_window
 from sites.amazon.dates import DeliveryState, is_plausible, parse_date
 from sites.amazon.markets import MARKETS
 from sites.base import StockResult
@@ -146,3 +147,46 @@ def test_a_vetoed_listing_cannot_alert_via_its_date(tmp_path):
     seed.save()
     assert SiteState(path).alert_kind(
         _result(alert_reason="date moved earlier", alertable=False)) is None
+
+
+# --- the delivery window: a long estimate is a form of unavailability -------
+
+def test_estimate_inside_the_window_stays_in_stock():
+    assert apply_delivery_window(True, 14, "22 September", 90) == (True, None)
+    assert apply_delivery_window(True, 90, "x", 90) == (True, None)   # boundary is inclusive
+
+
+def test_estimate_beyond_the_window_is_not_available_yet():
+    in_stock, note = apply_delivery_window(True, 180, "5 March", 90)
+    assert in_stock is False
+    assert "180 days out" in note and "90-day window" in note
+    # Nothing is hidden: the real date is still named.
+    assert "5 March" in note
+
+
+def test_the_window_never_promotes_an_unavailable_listing():
+    assert apply_delivery_window(False, 5, "x", 90) == (False, None)
+
+
+def test_no_date_means_the_window_cannot_apply():
+    """Most watched items are unavailable and have no delivery block at all."""
+    assert apply_delivery_window(True, None, None, 90) == (True, None)
+
+
+def test_window_disabled_by_zero_or_absent():
+    assert apply_delivery_window(True, 999, "x", 0) == (True, None)
+    assert apply_delivery_window(True, 999, "x", None) == (True, None)
+
+
+def test_coming_inside_the_window_reads_as_a_restock(tmp_path):
+    """The reason for setting in_stock False rather than muting the alert: the
+    state machine then does the work."""
+    path = tmp_path / "s.json"
+    far, _ = apply_delivery_window(True, 180, "5 March", 90)
+    seed = SiteState(path)
+    seed.record(_result(in_stock=far))
+    seed.save()
+
+    near, note = apply_delivery_window(True, 30, "8 October", 90)
+    assert (near, note) == (True, None)
+    assert SiteState(path).alert_kind(_result(in_stock=near)) == "restock"

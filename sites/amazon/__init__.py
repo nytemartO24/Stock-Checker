@@ -211,6 +211,35 @@ def parse_product(html: str, config: dict, *, delivery_country: str) -> ParsedPr
     )
 
 
+def apply_delivery_window(in_stock: bool, delivery_days: int | None,
+                          delivery_date: str | None,
+                          max_days: int | None) -> tuple[bool, str | None]:
+    """Treat an estimate beyond `max_days` as not available yet.
+
+    A long estimate is itself a form of unavailability: an add-to-cart button
+    and a date six months out is not something you can have.
+
+    Returns (in_stock, note). Setting in_stock False rather than merely muting
+    the alert is the point — the estimate later coming inside the window then
+    reads as an ordinary out-of-stock -> in-stock transition, so you are told
+    when the item becomes ACTUALLY available. Muting via `alertable` would be
+    worse twice over: it would also gag the date-moved-earlier alert, which is
+    the very signal that matters here.
+
+    Nothing is hidden — the note states the real position, and the result still
+    carries the date.
+    """
+    if not in_stock or not max_days or delivery_days is None:
+        return in_stock, None
+    if delivery_days <= int(max_days):
+        return in_stock, None
+    return False, (
+        f"orderable, but the estimate is {delivery_days} days out "
+        f"({delivery_date}), beyond the {max_days}-day window — "
+        f"treated as not available yet"
+    )
+
+
 class AmazonChecker(SiteChecker):
     """Options: markets, watchlist, delivery_country, delivery_postcode,
     scalp_multiplier, alert_on_suspected_scalp, headless, max_price_sek."""
@@ -380,11 +409,19 @@ class AmazonChecker(SiteChecker):
         notes = [verdict.note] if verdict.note else []
         if location_note:
             notes.append(location_note)
+
+        in_stock, window_note = apply_delivery_window(
+            parsed.in_stock, parsed.delivery_days, parsed.delivery_date,
+            self.options.get("max_delivery_days"),
+        )
+        if window_note:
+            notes.append(window_note)
+
         alertable = not (verdict.suspected and not self.options.get("alert_on_suspected_scalp", True))
 
         logger.info(
             "[%s] %s %s: %s%s%s%s", self.name, market, asin,
-            "IN STOCK" if parsed.in_stock else "unavailable",
+            "IN STOCK" if in_stock else ("too far out" if parsed.in_stock else "unavailable"),
             f" @ {parsed.price_text}" if parsed.price_text else "",
             f" arrives {parsed.delivery_date} (+{parsed.delivery_days}d)"
             if parsed.delivery_date else " no date",
@@ -396,7 +433,7 @@ class AmazonChecker(SiteChecker):
             product_id=f"{market}:{asin}",
             product_name=parsed.title or asin,
             url=f"https://www.{config['domain']}/dp/{asin}",
-            in_stock=parsed.in_stock,
+            in_stock=in_stock,
             price_text=parsed.price_text,
             price_value=parsed.price_value,
             currency=parsed.currency,
