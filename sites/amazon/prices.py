@@ -210,9 +210,13 @@ class ReferencePrices:
             ratio = price_sek / reference
             if ratio <= multiplier:
                 return ScalpVerdict(False, None, reference)
+            # "~N SEK" not "N SEK": the alert shows the price as the store
+            # displays it (EUR on a German page), so an unexplained second
+            # currency reads as a bug. The tilde and the word normalised say
+            # this is a converted comparison, not a second quoted price.
             note = (
-                f"suspected scalp: {price_sek:,.0f} SEK is {ratio:.1f}x the reference "
-                f"{reference:,.0f} SEK (threshold {multiplier:g}x)"
+                f"suspected scalp: ~{price_sek:,.0f} SEK normalised, {ratio:.1f}x the "
+                f"reference {reference:,.0f} SEK (threshold {multiplier:g}x)"
             )
             if provisional:
                 note += " — reference is provisional, based on a single observed price"
@@ -228,9 +232,9 @@ class ReferencePrices:
                 return ScalpVerdict(False, None, tier_ceiling)
             return ScalpVerdict(
                 True,
-                f"suspected scalp: {price_sek:,.0f} SEK is {ratio:.1f}x the typical "
-                f"ceiling for a {tier} ({tier_ceiling:,.0f} SEK) — no per-product "
-                f"reference yet, so this is judged on product type alone",
+                f"suspected scalp: ~{price_sek:,.0f} SEK normalised, {ratio:.1f}x the "
+                f"typical ceiling for a {tier} ({tier_ceiling:,.0f} SEK) — no "
+                f"per-product reference yet, so this is judged on product type alone",
                 tier_ceiling,
             )
 

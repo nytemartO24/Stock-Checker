@@ -94,6 +94,7 @@ def test_scalp_flagged_against_reference(tmp_path):
     verdict = refs.assess("B0DN6YLGRX", 766.25, 2.0)
     assert verdict.suspected is True
     assert "6.3x" in verdict.note
+    assert "normalised" in verdict.note
     assert "provisional" not in verdict.note
 
 
