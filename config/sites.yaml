@@ -46,7 +46,11 @@ sites:
     # geolocates a different country per marketplace and the results stop
     # being comparable. Postcode applies to the domestic market only.
     delivery_country: Sweden
-    delivery_postcode: "37116"
+    # Set DELIVERY_POSTCODE in .env, not here — a postcode identifies a town,
+    # and this file is committed. Used on the domestic market only (the other
+    # markets validate the field against their own country and can only take
+    # a country selection).
+    delivery_postcode: ""
     # A listing above reference * this is flagged as a suspected scalp.
     # Scalping on this line runs 4-5x, so 2.0 has plenty of margin.
     scalp_multiplier: 2.0

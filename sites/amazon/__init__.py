@@ -17,6 +17,7 @@ availability, not just the date.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -228,8 +229,17 @@ class AmazonChecker(SiteChecker):
 
     def _check_market(self, playwright, market: str, references: ReferencePrices) -> Iterator[StockResult]:
         config = MARKETS[market]
-        country = self.options.get("delivery_country", "Sweden")
-        postcode = str(self.options.get("delivery_postcode", "37116"))
+        # Destination comes from the environment first. The postcode is
+        # personal data (it identifies a town), so it lives in gitignored
+        # .env rather than the committed config, and there is deliberately
+        # no default — a missing one should be a loud failure to pin the
+        # location, not a silent fallback to someone else's address.
+        country = os.environ.get("DELIVERY_COUNTRY") or self.options.get("delivery_country", "Sweden")
+        postcode = str(os.environ.get("DELIVERY_POSTCODE") or self.options.get("delivery_postcode", ""))
+        if not postcode:
+            logger.warning(
+                "[%s] no DELIVERY_POSTCODE set — the domestic market cannot pin a "
+                "precise address; set it in .env", self.name)
 
         logger.info("[%s] %s: checking %d product(s)", self.name, market, len(self.watchlist))
         browser_handle, page, location, pinned = amazon_browser.open_market(
