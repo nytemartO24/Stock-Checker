@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(wsl.exe -d kali-linux -- ssh vps:*)"
+      "Bash(wsl.exe -d kali-linux -- ssh vps:*)",
+      "Bash(wsl.exe -d kali-linux -- ssh vps *)"
     ]
   },
   "hooks": {
