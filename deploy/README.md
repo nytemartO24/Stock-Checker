@@ -5,27 +5,29 @@ so there is no scheduler to keep alive. `run_loop.py` is for local dev only.
 
 ## Install
 
-There is no git remote for this project yet, so the code is copied to the
-box rather than cloned:
+The repo lives at https://github.com/nytemartO24/Stock-Checker (public, so
+the VPS can pull it without any credentials — it has none configured).
+
+First time on a new box:
 
 ```bash
-# from the dev machine
-tar czf - --exclude=.venv --exclude=state --exclude=.git . \
-  | ssh vps 'mkdir -p /root/stock-checker && tar xzf - -C /root/stock-checker'
-
-ssh vps 'cd /root/stock-checker && ./deploy/setup.sh'
+ssh vps 'git clone https://github.com/nytemartO24/Stock-Checker.git /root/stock-checker   && cd /root/stock-checker && ./deploy/setup.sh'
+ssh vps 'nano /root/stock-checker/.env'   # webhook + DELIVERY_POSTCODE
 ```
 
-`setup.sh` is safe to re-run. It creates the venv, installs dependencies and
+## Updating
+
+```bash
+ssh vps 'cd /root/stock-checker && git pull && ./deploy/setup.sh'
+```
+
+`setup.sh` is safe to re-run: it creates the venv, installs dependencies and
 Chromium, creates `.env` from the example if missing, installs the logrotate
 config, and **merges** its cron entries into the existing crontab — it never
 replaces it, because news-notifier's live jobs share that crontab.
 
-Then fill in the webhook:
-
-```bash
-ssh vps 'nano /root/stock-checker/.env'   # DISCORD_WEBHOOK_URL
-```
+`.env`, `state/` and `.venv/` are gitignored, so a pull never touches your
+webhook, your accumulated reference prices, or the installed browser.
 
 ## What gets scheduled
 
