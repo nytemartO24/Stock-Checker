@@ -141,6 +141,12 @@ site like any other.
   actually followed.
 - After any nontrivial change, run existing tests (or the relevant script
   manually) rather than assuming it works.
+- A `PostToolUse` hook (`.claude/settings.json` -> `.claude/hooks/run_tests.py`)
+  runs the suite after any `.py` edit in this project and reports failures
+  back, so a regression surfaces on the edit that caused it. It fails open —
+  no venv, unparseable payload, or a file outside the project all exit
+  silently — so it can never block work. It is a safety net, not a substitute
+  for running tests deliberately after a nontrivial change.
 - Run `/code-review` on the diff before calling a nontrivial piece done —
   without being asked. Self-review shares the session's own assumptions; a
   review pass is what catches what I already talked myself into. (The
