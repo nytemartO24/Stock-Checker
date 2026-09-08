@@ -325,11 +325,23 @@ INTERRUPT you, via `StockResult.alertable`. With 161 products tracked,
 alerting on all of them is noise; the watchlist is how that gets quiet
 without giving up the data. Empty watchlist = alert on everything.
 
-Matching is a case-insensitive substring, and it has two traps that have
-already bitten: product names are NOT word-order stable (the item quoted as
-"Shark Scale" is titled "Scale Shark 4-50UF", so the plain name matches
-nothing), and a term also matches multi-item BUNDLES containing that
-product. The product code (`4-50UF`, `3-80FB`) is the reliable key.
+Entries are exact product HANDLES, not title terms. Handles are Shopify's
+equivalent of an ASIN — exact, unique, and PER STORE, so unlike one ASIN
+covering every Amazon market, each store needs its own list. Title matching
+was tried and dropped: names are not word-order stable (the item quoted as
+"Shark Scale" is titled "Scale Shark 4-50UF"), and a term also matches
+multi-item bundles containing the product. Decisive case — popsplanet's
+Delta Unicorn has the handle
+`beyblade-x-starter-pack-guadalupe-mountains`, containing no part of the
+product name, so a handle can only ever be looked up, never derived.
+
+Look one up with `scripts/audit_store.py <store> --find "<term>"`. A
+watchlist handle matching no product is reported at the end of a clean run,
+because a typo fails silently — you simply never hear about that item again.
+
+Bundles count. At toysnowman, Tread Croc exists ONLY inside a four-item
+bundle, and one such bundle went by unnoticed; both bundles are watchlisted
+on purpose.
 
 `title_include` / `title_exclude` answer a different question — is this
 product in scope to track at all — and are for excluding whole product
