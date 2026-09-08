@@ -225,10 +225,14 @@ def open_market(playwright, market: str, config: dict, *, country: str, postcode
     location = ""
     pinned = False
     try:
-        page.goto(warmup_url, wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_timeout(1500)
-        dismiss_cookie_banner(page, market)
-        dismiss_interstitial(page, market)
+        # MUST go through safe_goto, not a bare page.goto: Amazon throws a
+        # spurious "Download is starting" on navigation, and an unprotected
+        # warm-up loses the ENTIRE market when it hits — location never gets
+        # pinned, so every product that market returns describes a
+        # destination we didn't ask for. Seen live on .se. safe_goto also
+        # clears the cookie banner and interstitial, which this used to do
+        # itself.
+        safe_goto(page, warmup_url, market)
         location = set_delivery_location(page, market, config, country, postcode)
 
         # Substring check both ways: the widget renders the country alone

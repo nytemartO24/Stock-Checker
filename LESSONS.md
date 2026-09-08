@@ -59,3 +59,11 @@ CLAUDE.md and trim this file.
   exact convention the pilot used - would have caused an alert storm on
   restore. Fixed at both levels: the checker reports an error, and
   `SiteState.prune()` now refuses to prune against an entirely empty view.
+
+- 2026-09-08: Ported news-notifier's `safe_goto()` (which tolerates Amazon's
+  spurious "Download is starting" navigation error) but left `open_market()`'s
+  warm-up calling `page.goto()` directly. When it fired on .se the whole
+  market was lost for that run - location never pinned, so nothing from it
+  was comparable. The pilot had fixed exactly this bug one level down and
+  said so in a comment. Porting proven code means porting the rule it
+  encodes ("every navigation goes through safe_goto"), not just the function.
