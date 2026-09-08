@@ -34,6 +34,18 @@ sites:
       - beyblade-x-booster
       - beyblade-x-starter-pack
       - beyblade-x-double-pack
+    # Terms identifying the products worth NOTIFYING about. Everything in
+    # the collections above is still tracked (one request covers the whole
+    # collection, so it is free, and it keeps price history plus a
+    # first_seen date for spotting newcomers) — this only decides what may
+    # interrupt you. EMPTY MEANS EVERYTHING.
+    #
+    # Matching is a case-insensitive substring. Two traps, both real:
+    #   * names are not word-order stable — the product quoted as "Shark
+    #     Scale" is titled "Scale Shark 4-50UF", so the plain name misses;
+    #   * a term also matches multi-item BUNDLES containing that product.
+    # The product code ("4-50UF", "3-80FB") is the reliable key.
+    watchlist: []
 
   amazon:
     type: amazon
@@ -104,6 +116,18 @@ sites:
     currency_symbol: "kr"
     collections:
       - beyblade
+    # Terms identifying the products worth NOTIFYING about. Everything in
+    # the collections above is still tracked (one request covers the whole
+    # collection, so it is free, and it keeps price history plus a
+    # first_seen date for spotting newcomers) — this only decides what may
+    # interrupt you. EMPTY MEANS EVERYTHING.
+    #
+    # Matching is a case-insensitive substring. Two traps, both real:
+    #   * names are not word-order stable — the product quoted as "Shark
+    #     Scale" is titled "Scale Shark 4-50UF", so the plain name misses;
+    #   * a term also matches multi-item BUNDLES containing that product.
+    # The product code ("4-50UF", "3-80FB") is the reliable key.
+    watchlist: []
     # This store has ONE beyblade collection, mixing product generations, so
     # an unwanted line can only be dropped by title. EXCLUDE the old
     # generation rather than trying to include the current one by name:

@@ -317,8 +317,27 @@ Currently tracked: popsplanet's `beyblade-x-booster` / `-starter-pack` /
 A store that is not Shopify needs its own module — see the transport rules
 in Conventions.
 
-New products need no special handling: an unseen handle has no stored
-state, so it alerts the first time it appears in stock.
+**Watchlist vs. tracking — keep these separate.** A Shopify collection
+arrives in ONE request, so tracking every product in it is free and worth
+doing: it builds price history and gives each product a `first_seen` date.
+What the per-site `watchlist` controls is only whether a restock may
+INTERRUPT you, via `StockResult.alertable`. With 161 products tracked,
+alerting on all of them is noise; the watchlist is how that gets quiet
+without giving up the data. Empty watchlist = alert on everything.
+
+Matching is a case-insensitive substring, and it has two traps that have
+already bitten: product names are NOT word-order stable (the item quoted as
+"Shark Scale" is titled "Scale Shark 4-50UF", so the plain name matches
+nothing), and a term also matches multi-item BUNDLES containing that
+product. The product code (`4-50UF`, `3-80FB`) is the reliable key.
+
+`title_include` / `title_exclude` answer a different question — is this
+product in scope to track at all — and are for excluding whole product
+lines a store mixes into one collection.
+
+New products need no special handling for alerting: an unseen handle has no
+stored state, so a watchlisted one alerts the first time it appears in
+stock.
 
 ### In stock, and the scalper problem
 

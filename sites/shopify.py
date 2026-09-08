@@ -44,6 +44,34 @@ class ShopifyChecker(SiteChecker):
         """Drop products whose title contains any of these."""
         return [t.lower() for t in (self.options.get("title_exclude") or [])]
 
+    @property
+    def watchlist(self) -> list[str]:
+        """Terms identifying the products worth being NOTIFIED about. Empty
+        means everything (the original behaviour)."""
+        return [t.lower() for t in (self.options.get("watchlist") or [])]
+
+    def is_watched(self, title: str) -> bool:
+        """Whether a restock of this product should notify.
+
+        Separate from `wanted()` on purpose. A whole collection arrives in
+        ONE request, so tracking every product is free and worth doing — it
+        keeps price history and lets a newcomer be spotted from
+        `first_seen`. What the watchlist controls is the alert, via
+        StockResult.alertable, so a store's 60 products can be tracked while
+        only the handful you care about are allowed to interrupt you.
+
+        Matching is a case-insensitive substring, which is predictable but
+        blunt: a term also matches multi-item bundles CONTAINING that
+        product, and product names are not word-order stable across stores
+        ("Scale Shark 4-50UF" on one, quoted as "Shark Scale" elsewhere).
+        The product code (`4-50UF`) is the reliable key when a plain name
+        misses.
+        """
+        if not self.watchlist:
+            return True
+        low = (title or "").lower()
+        return any(term in low for term in self.watchlist)
+
     def wanted(self, title: str) -> bool:
         """A store groups by its own logic, not ours: toysnowman files two
         older-generation products under `beyblade` alongside Beyblade X, and
@@ -159,6 +187,8 @@ class ShopifyChecker(SiteChecker):
             price_value=price_value,
             currency=currency,
             seller=None,  # single-vendor store; the site IS the seller
+            # Tracked either way; only watchlisted products may interrupt.
+            alertable=self.is_watched(product.get("title") or handle),
         )
 
 

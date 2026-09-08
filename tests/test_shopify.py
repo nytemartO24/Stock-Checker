@@ -130,3 +130,33 @@ def test_title_exclude_wins_over_include(fake_client):
 def test_no_title_filters_keeps_everything(popsplanet_payload, fake_client):
     results = list(_checker(fake_client([popsplanet_payload])).check())
     assert len(results) == 3
+
+
+def test_watchlist_gates_alerts_but_not_tracking(fake_client):
+    """A whole collection arrives in one request, so tracking everything is
+    free. The watchlist controls only whether a restock may interrupt you."""
+    payload = {"products": [
+        {"handle": "wanted", "title": "Beyblade X Scale Shark 4-50UF UX Booster Pack",
+         "variants": [{"price": "93.00", "available": True}]},
+        {"handle": "junk", "title": "Beyblade X Arrow Wizard 4-80O Booster Pack",
+         "variants": [{"price": "93.00", "available": True}]},
+    ]}
+    options = dict(OPTIONS, watchlist=["4-50UF"])
+    results = {r.product_id: r for r in ShopifyChecker("t", options, fake_client([payload])).check()}
+    assert set(results) == {"wanted", "junk"}          # both tracked
+    assert results["wanted"].alertable is True
+    assert results["junk"].alertable is False          # tracked, but silent
+
+
+def test_empty_watchlist_alerts_on_everything(popsplanet_payload, fake_client):
+    results = list(_checker(fake_client([popsplanet_payload])).check())
+    assert all(r.alertable for r in results)
+
+
+def test_watchlist_is_case_insensitive_and_matches_codes(fake_client):
+    payload = {"products": [{"handle": "h", "title": "Beyblade X Sterling Wolf 3-80FB UX Starter Pack",
+                             "variants": [{"price": "121.00", "available": True}]}]}
+    for term in ["sterling wolf", "3-80fb", "STERLING"]:
+        options = dict(OPTIONS, watchlist=[term])
+        r = list(ShopifyChecker("t", options, fake_client([payload])).check())[0]
+        assert r.alertable is True, term
