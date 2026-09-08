@@ -200,6 +200,31 @@ Notes for whoever runs this next:
   don't `git pull` or overwrite state on the VPS without being asked — it
   is running live and its state files are not in git.
 
+## Working with the user
+
+Kept here rather than only in Claude's per-project memory, because memory is
+keyed to the directory a session STARTS in and so does not survive the
+project being opened from a different folder. This file travels with the
+repo, including to the VPS clone.
+
+- **Work autonomously.** Make routine engineering calls without asking. Run
+  verification (tests, a live run, `/code-review`) as part of finishing, not
+  as an optional extra, and report what it found — including your own
+  mistakes, which is the expected standard here, not a failure.
+- **Escalate instead of grinding.** If something isn't working, say so
+  rather than burning tokens on retries: "notify me rather than bashing your
+  head for too long and wasting tokens." Timebox open-ended investigations,
+  state the box out loud, and report the result either way. The user often
+  holds context that resolves it in one sentence.
+- **Check proven code before experimenting.** When an experiment's result
+  would contradict code that demonstrably works in production, the
+  experiment is probably wrong — read that code's rationale first. This
+  session lost a detour to probing Amazon without the session warm-up that
+  `news-notifier`'s `browser.py` already documented.
+- **Watch the budget.** This is a personal project on a metered plan.
+  Prefer the cheapest verification that answers the question, and prefer
+  finishing one thing to starting three.
+
 ## Self-updating this file
 
 This CLAUDE.md is expected to evolve as the project does. Whenever a
