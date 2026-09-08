@@ -187,13 +187,29 @@ Verified 2026-09-08: git operations, log reads, and file writes under
 `/root` all work. The repo is at `/root/news-notifier` (the news-notifier
 pilot); Stock Checker is not deployed there yet.
 
+Deployed 2026-09-08 to `/root/stock-checker`, cron-only (no systemd — cron
+owns the timing and there is nothing to keep alive). `deploy/README.md` has
+the full picture; the short version:
+
+- One job at `:15/:45`, clear of news-notifier's Playwright jobs at `:00/:30`
+  and `:10/:40` so two Chromium instances never start together.
+- Installed **dry-run**. The Amazon checker watches the same ASINs as the
+  live pilot, so both sending would double-alert from diverging state.
+  `deploy/status.sh` has an explicit conflict check for exactly this.
+- `deploy/setup.sh` MERGES its cron entries into the existing crontab. Never
+  make it replace: news-notifier's live jobs share that crontab.
+- No git remote exists yet, so deployment is a tar over SSH (README has the
+  command), not a clone. Setting up a remote would make updates a `git pull`.
+
 Notes for whoever runs this next:
 - The key lives only in WSL (`/home/kali/.ssh/id_ed25519`), not on the
   Windows side. Copying it out is blocked by the permission classifier and
   isn't needed — the alias above is enough.
-- Git Bash rewrites Linux-looking paths when passing them to `wsl.exe`.
-  Prefix with `MSYS_NO_PATHCONV=1` when a WSL-side absolute path is an
-  argument, or `tee /home/kali/...` becomes `C:/Program Files/Git/home/...`.
+- Git Bash rewrites Linux-looking paths passed through `wsl.exe` — including
+  paths meant for the REMOTE host, not just WSL-side ones. Prefix with
+  `MSYS_NO_PATHCONV=1` whenever an absolute Linux path is an argument, or
+  `ssh vps '/root/stock-checker/deploy/status.sh'` fails with
+  `C:/Program: No such file or directory`.
 - `wsl.exe` output can carry NUL bytes; pipe through `tr -d '\0'` when the
   result looks mangled.
 - ALWAYS dry-run against production first (omit `--send-discord`), and
@@ -336,10 +352,6 @@ far less than having a trustworthy reference.
 
 ## Open questions / not yet decided
 
-- VPS deployment mechanics (systemd service vs. keeping it cron-only) —
-  revisit once local version is stable. Leaning cron-only, reusing
-  news-notifier's `deploy/run.sh` pattern (per-script `flock`, START/END
-  markers with exit code, `.env` sourced at run time).
 - Does Amazon actually need Playwright? Evidence so far says **maybe not**,
   but the blocker is delivery-location pinning, not page fetching.
   Measured 2026-09-08 with plain HTTP + a cookie jar, warming up on the

@@ -1,0 +1,21 @@
+# stock-checker scheduled jobs — installed by deploy/setup.sh, which fills
+# in the install path below and MERGES these lines into the existing crontab
+# rather than replacing it. (Comments here deliberately avoid naming the
+# placeholder token, since the install-time substitution rewrites comment
+# text too and the result reads as nonsense in `crontab -l`.)
+#
+# SLOT CHOICE: news-notifier already occupies :00/:30 (delivery), :10/:40
+# (catalog) and :20/:50 (hypixel) on this box. :15/:45 keeps this job clear
+# of both Playwright-driven pilot jobs, so two Chromium instances never
+# start at the same moment on a small VPS.
+#
+# One entry runs every enabled site. The Shopify checkers are a single JSON
+# request each and add a couple of seconds; Amazon dominates the runtime at
+# roughly three minutes for four markets. Split them with --site if you
+# ever want the Shopify stores polled more often than Amazon.
+#
+# DRY RUN BY DEFAULT — note the absence of --send-discord. While the
+# news-notifier pilot is still scheduled, both systems watch the same
+# ASINs, and both sending would mean duplicate alerts from diverging state.
+# See deploy/README.md "Going live" for the two-step cutover.
+15,45 * * * * __APP_DIR__/deploy/run.sh main.py >> __APP_DIR__/logs/stock-checker.log 2>&1
