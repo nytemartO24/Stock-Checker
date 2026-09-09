@@ -255,6 +255,15 @@ repo, including to the VPS clone.
   head for too long and wasting tokens." Timebox open-ended investigations,
   state the box out loud, and report the result either way. The user often
   holds context that resolves it in one sentence.
+- **Observe before theorising — the user has called this out twice.** Do not
+  diagnose a browser problem from log text, and do not guess URL parameters.
+  Render the page, dump the element, watch the network. Two concrete costs in
+  this project: a delivery-modal "timeout" was diagnosed from a log line as slow
+  content when instrumenting showed the modal never opened at all, and a day of
+  idealo work guessed at pagination parameters that were all silently ignored
+  while one network capture revealed the real endpoint, the real paging scheme
+  and the real bot wall. The technique that works is the one that found ginza's
+  API: watch what the page itself requests.
 - **Check proven code before experimenting.** When an experiment's result
   would contradict code that demonstrably works in production, the
   experiment is probably wrong — read that code's rationale first. This
