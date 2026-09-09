@@ -44,27 +44,42 @@ eurotoys.se
 webhallen.com
 prisjakt.nu              # aggregator; 403 to HTTP, needs --browser
 
-# --- Germany: found via idealo.de offer lists, 2026-09-09 ---
+# --- Germany: idealo.de offer lists on real Beyblade pages, 2026-09-09 ---
 # The highest-value group here: cheap freight to Sweden and real catalogues.
-galaxus.de               # large EU electronics/general retailer, ships SE
-otto.de                  # major DE marketplace + own stock
+# Every one of these was taken from a page for an actual Beyblade product —
+# an earlier pass harvested shops off a fidget cube and a squishy toy that
+# idealo's search had returned, which is how einzigundartig.de got in here and
+# why it is now gone.
+otto.de                  # 120 PRODUCTS via its own /suche — the widest found anywhere
+galaxus.de               # 50 products via own search; Swiss-owned, VERIFY IT SHIPS TO SE
 kaufland.de              # major DE marketplace
 voelkner.de
-toynova.de               # toy specialist
+alternate.de             # large DE electronics/general retailer
+thalia.de                # DE books/media chain, carries toys
+buecher.de               # ditto
+proshop.de               # DE/DK electronics chain
+duo-shop.de
+toynova.de               # toy specialist (1 product on own search — watch this)
 galaxiespielzeug.de      # toy specialist
 richtiggutesspielzeug.de # toy specialist
-einzigundartig.de
 rofu.de                  # DE toy chain (from OpenStreetMap)
 spielwaren-kroemer.de    # DE toy specialist (from OpenStreetMap)
-ideeundspiel.com         # DE toy buying group
+ideeundspiel.com         # DE toy buying group (1 product)
+0815.eu                  # region unclear, check
+kidinn.com               # region unclear, check
 
-# --- Netherlands / Belgium / France (from OpenStreetMap) ---
-intertoys.nl             # the big NL toy chain
-top1toys.nl
+# --- Netherlands / Belgium / France ---
+intertoys.nl             # the big NL toy chain — 8 products via /zoeken (browser)
+top1toys.nl              # confirmed via kieskeurig.nl offer lists
 dreamland.nl             # the big BE toy chain
 3vosjes.nl
 king-jouet.com           # large FR toy chain
 bluebrixx.com
+# bol.com — kieskeurig labels it "bol." / "bol. Plaza", which the parser cannot
+# turn into a domain without guessing. It is the largest NL retailer and it did
+# appear on real Beyblade pages, so probe it directly rather than trusting the
+# label.
+bol.com
 
 # --- EU, kept for coverage despite a narrower range ---
 gamesplusmalta.com       # 13 products, WooCommerce, plain HTTP works

@@ -358,6 +358,18 @@ AGGREGATORS_BROWSER: dict[str, dict] = {
         "shop_attr": r'data-shop-name="([^"]+)"',
         "region_hint": "eu-core",
     },
+    "kieskeurig.nl": {
+        # The Dutch one. Its shop identity is NOT in a data attribute — it is
+        # the alt text of each offer's logo image, "Top1Toys.nl - Affiliate
+        # logo", so the carrier is the alt pattern below and the label needs the
+        # affiliate suffix stripped. Found by dumping every plausible carrier on
+        # a real product page rather than assuming idealo's shape travels.
+        "search": "https://www.kieskeurig.nl/search?q={q}",
+        "product_link": r'href="(?:https?://[^"/]+)?(/[a-z0-9\-]+/product/[^"]+)"',
+        "base": "https://www.kieskeurig.nl",
+        "shop_attr": r'alt="([^"]{2,40}?) logo"',
+        "region_hint": "eu-core",
+    },
     "geizhals.de": {
         # Kept although its challenge did NOT clear on 2026-09-09 ("bot
         # challenge not cleared", 11.9KB). Recorded rather than deleted so the
@@ -375,6 +387,11 @@ AGGREGATORS_BROWSER: dict[str, dict] = {
 # product is on otto.de, which IS a lead, while "eBay - Shop aus Bern" is one
 # person's eBay listing and is not.
 STALL_NAMES = re.compile(r"(ebay|amazon marketplace|marketplace$|^kds-|hood\.de)", re.I)
+
+# Labels that are the aggregator talking about itself, or an affiliate-network
+# suffix bolted onto a real shop name ("Top1Toys.nl - Affiliate").
+NOT_A_SHOP = re.compile(r"^(kieskeurig|idealo|geizhals|prisjakt|pricerunner)$", re.I)
+LABEL_NOISE = re.compile(r"\s*-\s*affiliate$", re.I)
 
 DEFAULT_COUNTRIES = ("DE", "NL", "BE", "AT", "DK", "FI", "FR")
 
@@ -690,7 +707,8 @@ def judge(hit: dict, control: dict) -> str:
     return f"REAL — {len(links)} product link(s)"
 
 
-def probe_domain(fetch: Fetch, domain: str, term: str) -> dict:
+def probe_domain(fetch: Fetch, domain: str, term: str,
+                 max_fetches: int | None = None) -> dict:
     """Ask one shop's own search for `term`, then CHECK THAT IT LISTENED.
 
     Counting product links is not enough, and believing it produced garbage:
@@ -708,7 +726,7 @@ def probe_domain(fetch: Fetch, domain: str, term: str) -> dict:
     origin = domain if domain.startswith("http") else f"https://{domain}"
     attempts: list[dict] = []
     winner: tuple[dict, dict] | None = None
-    budget = MAX_FETCHES_PER_DOMAIN
+    budget = max_fetches or MAX_FETCHES_PER_DOMAIN
     for path in SEARCH_PATHS:
         if budget <= 0:
             break
@@ -955,7 +973,9 @@ def shop_domain(name: str) -> tuple[str | None, str]:
     mangled into one, because inventing "kds-tuning.de" would be a guess
     presented as a finding.
     """
-    label = name.split(" - ")[0].split("(")[0].strip().lower()
+    label = LABEL_NOISE.sub("", name).split(" - ")[0].split("(")[0].strip().lower()
+    if NOT_A_SHOP.match(label):
+        return None, ""
     if re.fullmatch(r"[a-z0-9\-]+(\.[a-z0-9\-]+)+", label) and "." in label:
         return registrable(label), label
     return None, name.strip()
@@ -982,7 +1002,19 @@ def run_offers(fetcher, terms: list[str], max_products: int = 3,
                 if href not in products:
                     products.append(href)
             log.append(f"{name} search {term!r}: {len(products)} product page(s)")
+            # The first word of the search term is the relevance test below.
+            keyword = term.split()[0].lower()
             for href in products[:max_products]:
+                # AN AGGREGATOR'S SEARCH IS NOT PRECISE, and harvesting shops
+                # from whatever it returns is how a Beyblade scan "found"
+                # coolblue.nl and mediamarkt.nl: kieskeurig answered "beyblade x
+                # starter pack" with televisions and vacuum cleaners, and idealo
+                # answered with a fidget cube. Every shop on those pages is a
+                # real shop and a false lead. So the product must be THE PRODUCT
+                # before its offers count as evidence of stocking it.
+                if keyword not in href.lower():
+                    log.append(f"  {href[:56]}: skipped, not a {keyword!r} product")
+                    continue
                 page, error = fetcher.fetch(config["base"] + href)
                 if error:
                     log.append(f"  {href[:48]}: FAILED {error}")
@@ -995,7 +1027,8 @@ def run_offers(fetcher, terms: list[str], max_products: int = 3,
                         continue
                     domain, raw = shop_domain(label)
                     if domain is None:
-                        unresolved.add(raw)
+                        if raw:
+                            unresolved.add(raw)
                         continue
                     add(found, f"https://{domain}/", f"{name}")
                     shops += 1
@@ -1109,6 +1142,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--domains", help="probe: file of domains, one per line")
     parser.add_argument("--urls", help="verify: file of URLs, one per line")
     parser.add_argument("--probe-term", default="beyblade")
+    parser.add_argument("--max-fetches", type=int,
+                        help="probe: cap requests per domain (default %d). Lower it for a "
+                             "fast triage pass over a large candidate pool."
+                             % MAX_FETCHES_PER_DOMAIN)
     parser.add_argument("--browser", action="store_true",
                         help="probe/verify through Chromium instead of plain HTTP. NOT a "
                              "fallback for this market: measured 2026-09-09, 0 of 16 German "
@@ -1178,7 +1215,8 @@ def main(argv: list[str] | None = None) -> int:
                 fetch: Fetch = ((lambda u: fetcher.fetch(u)) if fetcher is not None
                                 else (lambda u: pool.get(u, headers=BROWSERISH)))
                 for domain in domains:
-                    result = probe_domain(fetch, domain, args.probe_term)
+                    result = probe_domain(fetch, domain, args.probe_term,
+                                          args.max_fetches)
                     results.append(result)
                     real = result["verdict"].startswith("REAL")
                     print(f"  {'OK ' if real else '   '} {domain:<26} "
