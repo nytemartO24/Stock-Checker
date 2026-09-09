@@ -1,65 +1,76 @@
 # Candidate retailers for `scripts/discover_stores.py probe`.
 #
 # NOT a tracked-store list — config/sites.yaml owns that. These are domains
-# worth ASKING whether they stock Beyblade, via their own site search. A
-# domain here costs a handful of requests once, not per run.
+# worth ASKING whether they stock Beyblade X, via their own site search.
 #
-# Grouped by market because that is the whole point: a Sweden-facing shop is
-# worth more here than a better one that will not ship here affordably.
+# TWO RULES DECIDE WHAT BELONGS HERE, both from the user:
+#
+# 1. SHIPS TO SWEDEN, FROM THE EU. EU core (DE/NL/BE/AT/LU/FR) is the target
+#    because freight is cheapest; Nordic neighbours equally good; rest of the
+#    EU fine but slower. The US and UK are OUT — post-Brexit the UK is a third
+#    country, so customs and freight erase any saving on a 130 kr top.
+# 2. A WIDE SELECTION, CONSISTENTLY. A shop with three Beyblades is not worth a
+#    request every 30 minutes. Judged on the product count `probe` reports.
+#
+# Removed 2026-09-09 under those rules, recorded so they are not re-added by a
+# future search: beywarehouse.com, beysandbricks.com, beyblade-toys.com,
+# entertainmentearth.com, bigbadtoystore.com, troveofcollectibles.com (US);
+# thetoyshop.com, smythstoys.com, magicmadhouse.co.uk, zavvi.com,
+# staractionfigures.co.uk, eclipse-gaming.co.uk (UK); hlj.com, amiami.com,
+# plazajapan.com, solarisjapan.com, nin-nin-game.com (JP); otakume.com (UAE).
+# And on selection size: lekextra.se (2 products), babyland.se (1),
+# storegan.it (1), probems.be (5), goldsaucerstore.com (10 — and mostly
+# accessories).
+#
 # `#` comments and blank lines are ignored, so annotate freely.
 
-# --- Sweden: toys and general retail ---
+# --- Sweden: confirmed usable, wide selection ---
+bigshopper.se            # 69 products — the widest of any .se shop found
+gameshop.se              # 40 — already tracked
+ginza.se                 # already tracked; client-side search, uses its JSON API
+pricerunner.se           # 18 — aggregator, so a source of shops not a shop
+
+# --- Sweden: client-side search, need their JSON endpoint or --browser ---
 lekia.se                 # uses "Bbx" naming, like ginza
-lekextra.se
-leklust.se
-leksaksjatten.se
-alltileksaker.se
-eurotoys.se
-babyland.se
+cdon.se
+coolshop.se
+adlibris.com
 jollyroom.se
 lekmer.se
-coolshop.se
-teknikproffset.se
-webhallen.com
-cdon.se
-fyndiq.se
 boozt.com
-adlibris.com
-spelexperten.com
-maxgaming.se
-elgiganten.se
-power.se
-bigshopper.se            # found by discover_stores search, 2026-09-09
-ginza.se                 # already tracked — probe confirms the tool agrees
-gameshop.se              # already tracked
+teknikproffset.se
+fyndiq.se
+eurotoys.se
+webhallen.com
+prisjakt.nu              # aggregator; 403 to HTTP, needs --browser
 
-# --- Sweden: aggregators (sources of retailers, not retailers) ---
-prisjakt.nu              # answered 403 to a plain fetch on 2026-09-09
-pricerunner.se           # renders client-side
+# --- Germany: found via idealo.de offer lists, 2026-09-09 ---
+# The highest-value group here: cheap freight to Sweden and real catalogues.
+galaxus.de               # large EU electronics/general retailer, ships SE
+otto.de                  # major DE marketplace + own stock
+kaufland.de              # major DE marketplace
+voelkner.de
+toynova.de               # toy specialist
+galaxiespielzeug.de      # toy specialist
+richtiggutesspielzeug.de # toy specialist
+einzigundartig.de
+rofu.de                  # DE toy chain (from OpenStreetMap)
+spielwaren-kroemer.de    # DE toy specialist (from OpenStreetMap)
+ideeundspiel.com         # DE toy buying group
 
-# --- Europe / worldwide: hobby and specialist ---
-rarewaves.com            # user-found, 2026-09-09
-beyblade-toys.com
-beywarehouse.com
-beysandbricks.com
-shopforgeek.com          # FR — EAN-confirmed
-probems.be               # BE — EAN-confirmed
-goldsaucerstore.com      # puts the EAN in its URLs
-gamesplusmalta.com       # MT — EAN-confirmed
-otakume.com              # UAE, Takara Tomy stock
-blackfire.eu             # EU distributor, not retail
-jap-one.com              # DE/EU, puts the EAN in its URLs
-storegan.it              # IT, puts the EAN in its URLs
-smythstoys.com
-thetoyshop.com
-magicmadhouse.co.uk
-zavvi.com
-entertainmentearth.com
-bigbadtoystore.com
+# --- Netherlands / Belgium / France (from OpenStreetMap) ---
+intertoys.nl             # the big NL toy chain
+top1toys.nl
+dreamland.nl             # the big BE toy chain
+3vosjes.nl
+king-jouet.com           # large FR toy chain
+bluebrixx.com
 
-# --- Japan: Takara Tomy originals (different names, same EANs) ---
-amiami.com
-hlj.com
-plazajapan.com
-solarisjapan.com
-nin-nin-game.com
+# --- EU, kept for coverage despite a narrower range ---
+gamesplusmalta.com       # 13 products, WooCommerce, plain HTTP works
+jap-one.com              # DE-based, publishes gtin13, EUR pricing
+blackfire.eu             # EU DISTRIBUTOR, not retail — mine its dealer list
+
+# --- Deliberate non-EU exception ---
+rarewaves.com            # UK. Tracked anyway: user's own find, SEK pricing,
+                         # unusually complete catalogue. See sites.yaml.

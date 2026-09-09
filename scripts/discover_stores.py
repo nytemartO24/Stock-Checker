@@ -40,8 +40,10 @@ import json
 import logging
 import re
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Iterator
 from urllib.parse import parse_qs, quote_plus, urljoin, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -276,7 +278,82 @@ OVERPASS_HOSTS = (
 # none of them run a webshop that lists individual toys.
 OSM_SHOP_TYPES = "toys|games|hobby|model|video_games"
 
-# ISO country codes worth harvesting, in the shipping order of REGION_TLDS.
+# BOUNDING BOXES, not `area["ISO3166-1"=...]`. The area form is the obvious way
+# to write this and it TIMES OUT: measured 2026-09-09, BE and DK returned but
+# DE, NL, AT, FI and FR all came back 504 Gateway Timeout, because resolving a
+# national boundary relation and testing every shop against it is far more work
+# than a coordinate comparison. A box answers the same question in seconds.
+#
+# The cost is that a box crosses borders — a German box catches Swiss and Czech
+# shops. That is handled downstream by `region_of`, which files them by TLD, so
+# the imprecision changes which bucket a shop lands in and never whether it is
+# found. (south, west, north, east)
+COUNTRY_BOXES: dict[str, tuple[float, float, float, float]] = {
+    "DE": (47.27, 5.87, 55.06, 15.04),
+    "NL": (50.75, 3.36, 53.56, 7.23),
+    "BE": (49.49, 2.54, 51.51, 6.41),
+    "AT": (46.37, 9.53, 49.02, 17.16),
+    "DK": (54.56, 8.07, 57.75, 15.20),
+    "FI": (59.80, 20.60, 70.09, 31.59),
+    "FR": (41.33, -5.14, 51.09, 9.56),
+    "IT": (36.60, 6.60, 47.10, 18.50),
+    "ES": (36.00, -9.30, 43.80, 3.40),
+    "PL": (49.00, 14.10, 54.90, 24.20),
+    "CZ": (48.55, 12.09, 51.06, 18.86),
+}
+
+# ---------------------------------------------------------------------------
+# Price aggregators, read with a browser.
+#
+# THE HIGHEST-YIELD SOURCE AVAILABLE, and the reason is structural: one product
+# page lists every retailer that has the product in stock right now, which is
+# the exact question this script exists to ask. A search engine can only tell
+# you a page mentioning the product exists somewhere.
+#
+# All of them answer 403 to plain HTTP from BOTH the dev machine and the VPS —
+# DataDome/Cloudflare fingerprinting, not IP reputation — so they need
+# core/browser.py. Measured 2026-09-09: idealo 558KB and prisjakt 985KB through
+# the browser, versus 3.9KB and 5.8KB of refusal over httpx.
+#
+# `shop_attr` is where the retailer's identity lives. On idealo it is
+# `data-shop-name`, and the value IS USUALLY THE DOMAIN ("galaxus.de",
+# "kaufland.de", "otto.de (Marktplatzhändler)"), which is why no redirect
+# following is needed — there are no /relocate links on the offer list at all.
+#
+# SEARCH BY NAME, NOT BY BARCODE. Measured on idealo: the name query returns
+# the product, the EAN query returns NOTHING. Aggregators index manufacturer
+# titles, not barcodes.
+AGGREGATORS_BROWSER: dict[str, dict] = {
+    "idealo.de": {
+        "search": "https://www.idealo.de/preisvergleich/MainSearchProductCategory.html?q={q}",
+        # The origin prefix is OPTIONAL and that is the whole point: idealo
+        # emits both relative and absolute hrefs for the same kind of link, and
+        # a pattern anchored on "/preisvergleich" matched only the relative
+        # ones — which on a real search page were an ad for a fidget cube while
+        # every actual result was absolute.
+        "product_link": r'href="(?:https?://[^"/]+)?(/preisvergleich/OffersOfProduct/\d+_-[^"]*)"',
+        "base": "https://www.idealo.de",
+        "shop_attr": r'data-shop-name="([^"]+)"',
+        "region_hint": "eu-core",
+    },
+    "geizhals.de": {
+        # Kept although its challenge did NOT clear on 2026-09-09 ("bot
+        # challenge not cleared", 11.9KB). Recorded rather than deleted so the
+        # next attempt knows it was tried and how it failed.
+        "search": "https://geizhals.de/?fs={q}&hloc=de",
+        "product_link": r'href="(?:https?://[^"/]+)?(/[a-z0-9\-]+-a\d+\.html)"',
+        "base": "https://geizhals.de",
+        "shop_attr": r'data-merchant-name="([^"]+)"',
+        "region_hint": "eu-core",
+    },
+}
+
+# A shop-name string that is a marketplace stall rather than a shop with its
+# own site. Reported separately: "otto.de (Marktplatzhändler)" means the
+# product is on otto.de, which IS a lead, while "eBay - Shop aus Bern" is one
+# person's eBay listing and is not.
+STALL_NAMES = re.compile(r"(ebay|amazon marketplace|marketplace$|^kds-|hood\.de)", re.I)
+
 DEFAULT_COUNTRIES = ("DE", "NL", "BE", "AT", "DK", "FI", "FR")
 
 # Politeness cap per shop. Nine search paths plus a control each would be 18
@@ -538,9 +615,9 @@ def run_search(pool: HostPool, eans: list[str], terms: list[str],
 # Mode 2: probe a shop's own search
 # ---------------------------------------------------------------------------
 
-def read_search(pool: HostPool, origin: str, path: str, term: str) -> dict:
+def read_search(fetch: Fetch, origin: str, path: str, term: str) -> dict:
     url = urljoin(origin + "/", path.format(q=quote_plus(term)).lstrip("/"))
-    body, error = pool.get(url, headers=BROWSERISH)
+    body, error = fetch(url)
     if error:
         status = re.search(r"returning (\d{3})", error)
         return {"url": url, "error": error,
@@ -558,6 +635,10 @@ def read_search(pool: HostPool, origin: str, path: str, term: str) -> dict:
         "platform": next((label for label, marker in PLATFORMS
                           if marker.lower() in low), None),
     }
+
+
+# Either transport, same signature: (url) -> (body, error).
+Fetch = Callable[[str], tuple[str, str | None]]
 
 
 def link_set(body: str, term: str) -> set[str]:
@@ -585,7 +666,7 @@ def judge(hit: dict, control: dict) -> str:
     return f"REAL — {len(links)} product link(s)"
 
 
-def probe_domain(pool: HostPool, domain: str, term: str) -> dict:
+def probe_domain(fetch: Fetch, domain: str, term: str) -> dict:
     """Ask one shop's own search for `term`, then CHECK THAT IT LISTENED.
 
     Counting product links is not enough, and believing it produced garbage:
@@ -607,7 +688,7 @@ def probe_domain(pool: HostPool, domain: str, term: str) -> dict:
     for path in SEARCH_PATHS:
         if budget <= 0:
             break
-        attempt = read_search(pool, origin, path, term)
+        attempt = read_search(fetch, origin, path, term)
         attempts.append(attempt)
         budget -= 1
         # NOT rejected for containing an empty-state phrase: themes ship that
@@ -621,7 +702,7 @@ def probe_domain(pool: HostPool, domain: str, term: str) -> dict:
         # answers /search?q= with a generic product grid, so gameshop.se
         # "matched" and then failed the control, while /?s= — the path that
         # works — was never tried.
-        control = read_search(pool, origin, path, CONTROL_TERM)
+        control = read_search(fetch, origin, path, CONTROL_TERM)
         budget -= 1
         if judge(attempt, control).startswith("REAL"):
             winner = (attempt, control)
@@ -752,41 +833,80 @@ def verify_url(pool: HostPool, url: str, eans: list[str]) -> dict:
 # Mode 4: harvest a shop directory from OpenStreetMap
 # ---------------------------------------------------------------------------
 
-def overpass(pool: HostPool, country: str) -> tuple[list[str], str | None]:
-    """Every mapped shop website in one country. Returns (urls, error).
+def tiles(box: tuple[float, float, float, float], grid: int
+          ) -> Iterator[tuple[float, float, float, float]]:
+    """Split a bounding box into a grid x grid set of smaller boxes.
 
-    Queried per country rather than by bounding box so the answer means
-    something exact: a box around Germany also collects Swiss and Czech shops,
-    and those belong in different shipping buckets. `nwr` covers nodes, ways
-    and relations — a mapped shop can be any of the three, and asking only for
-    nodes silently loses the ones mapped as buildings.
+    TILING IS WHAT MAKES THIS WORK AT ALL. Measured 2026-09-09: whole-country
+    boxes for DE, NL, AT, FI, FR and DK all came back 504 Gateway Timeout or
+    read-timed-out against both public Overpass instances, while BE — a small
+    country — returned 316 shops immediately. The public instances cap query
+    cost, so the fix is smaller queries, not a longer timeout.
     """
-    query = (
-        f'[out:json][timeout:180];'
-        f'area["ISO3166-1"="{country}"][admin_level=2]->.a;'
-        f'nwr["shop"~"^({OSM_SHOP_TYPES})$"]["website"](area.a);'
-        f'out tags;'
-    )
-    for host in OVERPASS_HOSTS:
-        body, error = pool.post(host, {"data": query})
-        if error:
-            continue
-        try:
-            elements = json.loads(body)["elements"]
-        except Exception as e:  # noqa: BLE001
-            error = f"unparseable Overpass reply: {type(e).__name__}"
-            continue
-        return [e.get("tags", {}).get("website", "") for e in elements], None
-    return [], error or "all Overpass hosts failed"
+    south, west, north, east = box
+    dy, dx = (north - south) / grid, (east - west) / grid
+    for row in range(grid):
+        for col in range(grid):
+            yield (south + row * dy, west + col * dx,
+                   south + (row + 1) * dy, west + (col + 1) * dx)
 
 
-def run_directory(pool: HostPool, countries: list[str]) -> dict[str, Candidate]:
+def overpass(pool: HostPool, country: str, grid: int = 3) -> tuple[list[str], str | None]:
+    """Every mapped shop website in one country's box. Returns (urls, error).
+
+    `nwr` covers nodes, ways and relations: a mapped shop can be any of the
+    three, and asking only for nodes silently loses every shop mapped as a
+    building outline — which is most of the larger ones.
+
+    A tile that fails is reported and SKIPPED, not fatal: nine tiles of which
+    eight answered is a useful, honestly-labelled partial result, whereas
+    treating it as a failure would throw away everything.
+    """
+    box = COUNTRY_BOXES.get(country)
+    if box is None:
+        return [], f"no bounding box defined for {country}; add one to COUNTRY_BOXES"
+
+    urls: list[str] = []
+    failures = 0
+    total = 0
+    for south, west, north, east in tiles(box, grid):
+        total += 1
+        query = (
+            f'[out:json][timeout:120];'
+            f'nwr["shop"~"^({OSM_SHOP_TYPES})$"]["website"]'
+            f'({south:.3f},{west:.3f},{north:.3f},{east:.3f});'
+            f'out tags;'
+        )
+        elements = None
+        for host in OVERPASS_HOSTS:
+            body, error = pool.post(host, {"data": query})
+            if error:
+                continue
+            try:
+                elements = json.loads(body)["elements"]
+                break
+            except Exception:
+                continue
+        if elements is None:
+            failures += 1
+            continue
+        urls += [e.get("tags", {}).get("website", "") for e in elements]
+
+    if failures == total:
+        return [], f"all {total} tiles failed"
+    note = f"{failures}/{total} tiles failed" if failures else None
+    return urls, note
+
+
+def run_directory(pool: HostPool, countries: list[str], args_grid: int = 3) -> dict[str, Candidate]:
     found: dict[str, Candidate] = {}
     for country in countries:
-        urls, error = overpass(pool, country)
-        if error:
+        urls, error = overpass(pool, country, args_grid)
+        if error and not urls:
             print(f"  {country}: FAILED {error}")
             continue
+        if error:
+            print(f"  {country}: PARTIAL — {error}")
         before = len(found)
         for url in urls:
             target = usable(url if "//" in url else f"https://{url}")
@@ -795,6 +915,71 @@ def run_directory(pool: HostPool, countries: list[str]) -> dict[str, Candidate]:
         print(f"  {country}: {len(urls)} mapped shop(s) with a website, "
               f"{len(found) - before} new domain(s)")
     return found
+
+
+# ---------------------------------------------------------------------------
+# Mode 5: scrape retailer lists off price aggregators (browser)
+# ---------------------------------------------------------------------------
+
+def shop_domain(name: str) -> tuple[str | None, str]:
+    """Turn an aggregator's shop label into a domain, if it is one.
+
+    idealo writes "galaxus.de - Shop aus Hamburg" and "otto.de
+    (Marktplatzhändler)", so the domain is the head of the string with the
+    location suffix and any parenthetical stripped. A label that is not a
+    domain ("kds-tuning") is returned as a name to look up rather than being
+    mangled into one, because inventing "kds-tuning.de" would be a guess
+    presented as a finding.
+    """
+    label = name.split(" - ")[0].split("(")[0].strip().lower()
+    if re.fullmatch(r"[a-z0-9\-]+(\.[a-z0-9\-]+)+", label) and "." in label:
+        return registrable(label), label
+    return None, name.strip()
+
+
+def run_offers(fetcher, terms: list[str], max_products: int = 3,
+               only: list[str] | None = None) -> tuple[dict[str, Candidate], list[str]]:
+    """For each aggregator: search by name, open products, harvest retailers."""
+    found: dict[str, Candidate] = {}
+    log: list[str] = []
+    unresolved: set[str] = set()
+    for name, config in AGGREGATORS_BROWSER.items():
+        if only and name not in only:
+            continue
+        for term in terms:
+            url = config["search"].format(q=quote_plus(term))
+            html, error = fetcher.fetch(url)
+            if error:
+                log.append(f"{name} search {term!r}: FAILED {error}")
+                continue
+            products = []
+            for href in re.findall(config["product_link"], html):
+                href = href.replace("&amp;", "&")
+                if href not in products:
+                    products.append(href)
+            log.append(f"{name} search {term!r}: {len(products)} product page(s)")
+            for href in products[:max_products]:
+                page, error = fetcher.fetch(config["base"] + href)
+                if error:
+                    log.append(f"  {href[:48]}: FAILED {error}")
+                    continue
+                labels = set(re.findall(config["shop_attr"], page))
+                shops, stalls = 0, 0
+                for label in labels:
+                    if STALL_NAMES.search(label):
+                        stalls += 1
+                        continue
+                    domain, raw = shop_domain(label)
+                    if domain is None:
+                        unresolved.add(raw)
+                        continue
+                    add(found, f"https://{domain}/", f"{name}")
+                    shops += 1
+                log.append(f"  {href[:56]}: {shops} shop(s), {stalls} marketplace stall(s)")
+    if unresolved:
+        log.append("shop labels that are not domains (look these up by hand): "
+                   + ", ".join(sorted(unresolved)[:20]))
+    return found, log
 
 
 # ---------------------------------------------------------------------------
@@ -873,13 +1058,23 @@ def report_search(found: dict[str, Candidate], log: list[str]) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("mode", choices=["search", "probe", "verify", "directory"])
+    parser.add_argument("mode",
+                        choices=["search", "probe", "verify", "directory", "offers"])
     parser.add_argument("--ean", action="append", default=[],
                         help="barcode to search for (repeatable)")
     parser.add_argument("--term", action="append", default=[],
                         help="product/brand text to search for (repeatable)")
+    parser.add_argument("--aggregator", action="append", default=[],
+                        help="offers mode: restrict to these aggregators by name")
+    parser.add_argument("--max-products", type=int, default=3,
+                        help="offers mode: product pages to open per search (default 3)")
+    parser.add_argument("--show-browser", action="store_true",
+                        help="run the browser headed, to watch what it does")
     parser.add_argument("--countries", default=",".join(DEFAULT_COUNTRIES),
                         help="directory mode: ISO country codes to harvest from OpenStreetMap")
+    parser.add_argument("--grid", type=int, default=3,
+                        help="directory mode: split each country box into grid x grid tiles. "
+                             "Whole-country queries time out on the public Overpass instances.")
     parser.add_argument("--out-domains",
                         help="directory mode: write the domains here, ready for `probe`")
     parser.add_argument("--tld",
@@ -890,6 +1085,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--domains", help="probe: file of domains, one per line")
     parser.add_argument("--urls", help="verify: file of URLs, one per line")
     parser.add_argument("--probe-term", default="beyblade")
+    parser.add_argument("--browser", action="store_true",
+                        help="probe/verify through Chromium instead of plain HTTP. NOT a "
+                             "fallback for this market: measured 2026-09-09, 0 of 16 German "
+                             "and Dutch shops were readable over HTTP — every one either "
+                             "renders search client-side or answers 403.")
     parser.add_argument("--verify-found", action="store_true",
                         help="search mode: fetch each candidate and keep only those whose "
                              "page actually mentions the product (strongly recommended)")
@@ -942,26 +1142,76 @@ def main(argv: list[str] | None = None) -> int:
                        Path(args.domains).read_text(encoding="utf-8").splitlines()]
             domains = [d for d in domains if d]
             results = []
-            for domain in domains:
-                result = probe_domain(pool, domain, args.probe_term)
-                results.append(result)
-                real = result["verdict"].startswith("REAL")
-                print(f"  {'OK ' if real else '   '} {domain:<26} "
-                      f"[{result.get('platform') or 'platform?':<12}] {result['verdict']}")
-                if real:
-                    print(f"       {result['url']}")
-                    print(f"       control: {result['control_links']} link(s), "
-                          f"overlap {result['overlap']}, "
-                          f"mentions {result['mentions']} vs {result['control_mentions']}")
-                    for sample in result["samples"]:
-                        print(f"       {sample[:94]}")
+            # One browser for the whole run when asked for, so a cleared
+            # challenge and its cookies carry across domains.
+            fetcher = None
+            if args.browser:
+                from core.browser import BrowserFetcher
+
+                fetcher = BrowserFetcher(headless=not args.show_browser)
+                fetcher.start()
+            try:
+                fetch: Fetch = ((lambda u: fetcher.fetch(u)) if fetcher is not None
+                                else (lambda u: pool.get(u, headers=BROWSERISH)))
+                for domain in domains:
+                    result = probe_domain(fetch, domain, args.probe_term)
+                    results.append(result)
+                    real = result["verdict"].startswith("REAL")
+                    print(f"  {'OK ' if real else '   '} {domain:<26} "
+                          f"[{result.get('platform') or 'platform?':<12}] {result['verdict']}")
+                    if real:
+                        print(f"       {result['url']}")
+                        print(f"       control: {result['control_links']} link(s), "
+                              f"overlap {result['overlap']}, "
+                              f"mentions {result['mentions']} vs {result['control_mentions']}")
+                        for sample in result["samples"]:
+                            print(f"       {sample[:94]}")
+            finally:
+                if fetcher is not None:
+                    fetcher.close()
             usable_count = sum(r["verdict"].startswith("REAL") for r in results)
             print(f"\n{usable_count}/{len(results)} shop searches usable")
+            # The user's rule: only stores with a WIDE selection are worth
+            # tracking, so rank by how much they actually returned rather than
+            # listing every shop that technically answered.
+            wide = sorted((r for r in results if r["verdict"].startswith("REAL")),
+                          key=lambda r: -r["product_links"])
+            if wide:
+                print("\nby selection size:")
+                for r in wide:
+                    print(f"  {r['product_links']:>4} products  {r['domain']}")
             payload = results
+
+        elif args.mode == "offers":
+            if not args.term:
+                parser.error("offers needs at least one --term (a NAME; the barcode "
+                             "returns nothing on an aggregator)")
+            from core.browser import browser_fetcher
+
+            with browser_fetcher(headless=not args.show_browser) as fetcher:
+                found, log = run_offers(fetcher, args.term, args.max_products,
+                                        args.aggregator or None)
+                if args.verify_found:
+                    shop_pool = HostPool(1.0, 2.5)
+                    try:
+                        confirm(shop_pool, found, args.ean, args.term)
+                    finally:
+                        shop_pool.close()
+            for entry in log:
+                print("   ", entry)
+            report = report_search(found, log)
+            print()
+            print(report)
+            if args.md_out:
+                Path(args.md_out).write_text(report, encoding="utf-8")
+            payload = {"log": log, "candidates": [
+                {**vars(c), "urls": sorted(c.urls), "found_by": sorted(c.found_by),
+                 "gtins": sorted(c.gtins), "region": c.region}
+                for c in sorted(found.values(), key=lambda c: c.domain)]}
 
         elif args.mode == "directory":
             countries = [c.strip().upper() for c in args.countries.split(",") if c.strip()]
-            found = run_directory(pool, countries)
+            found = run_directory(pool, countries, args.grid)
             # Ordered by shipping cost, and the out-of-EU bucket is dropped
             # rather than written: a US toy shop is not a lead here.
             keep = [c for c in found.values() if c.region != "skip"]
