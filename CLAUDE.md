@@ -408,7 +408,8 @@ design before the watchlists grow.
 rarewaves and jap-one publish `gtin13` in JSON-LD, but **6 of 8 pages contain
 the raw EAN somewhere in the HTML** — so a plain text search for the barcode
 bridges stores that expose no structured data at all. gameshop remains the
-hard case: internal SKU only, no EAN anywhere. Also note the product has a
+hard case: internal SKU only, no EAN anywhere. And the barcode itself is not
+single-valued — see the two-barcode finding below. Also note the product has a
 FOURTH name — the Fandom wiki calls it "SharkScale 4-50UF" — and that Ginza
 and gameshop list unreleased items under Hasbro's US-national-park codenames
 (Kobuk Valley, Zion, Yellowstone, Haleakala, Lake Clark, Mammoth Cave, Gateway
@@ -438,7 +439,10 @@ because they fail in different ways.
   while its internal search answers instantly, and it is the only method that
   works for a shop nobody links to.
 - **`verify`** reads JSON-LD `gtin13` off a product page — see the naming
-  problem above. This is the concrete route to it.
+  problem above. This is the concrete route to it. Prices it reports are
+  whatever page the engine returned, which is often a CATEGORY page, so treat
+  a price here as a lead and not as that product's price (gameshop came back
+  as "2096.00 SEK" this way).
 
 **The control query is what makes `probe` worth anything.** Counting product
 links is not evidence: `/?s=x&post_type=product` on a shop that is not
@@ -473,6 +477,15 @@ a tracked-store list; `sites.yaml` owns that.
 | jap-one.com | Magento, publishes `gtin13`, EUR 9.99 |
 | bigshopper.se | Swedish, carries the product |
 | storegan.it, goldsaucerstore.com | put the EAN in their URLs |
+| enarxis.eu, staractionfigures.co.uk, beybladenexus.com | publish `gtin13`, EUR 7.45 / GBP 9.33 |
+| troveofcollectibles.com, raptorgames.com | Shopify, publish the US UPC |
+
+**ONE PRODUCT HAS AT LEAST TWO BARCODES.** Measured: the EU/Hasbro-EU EAN is
+`5010996385222`, while beywarehouse, raptorgames and troveofcollectibles all
+publish `00195166316994` for the same item — Hasbro's US UPC. So an identity
+map keyed on a single barcode silently splits the product in two, and any
+lookup must carry a SET of codes per product. This is the same class of error
+as assuming one name, one tier down.
 
 14 of 48 candidate shop searches are usable over plain HTTP. Most Swedish
 chains (lekia, cdon, coolshop, adlibris, jollyroom, boozt, teknikproffset,
