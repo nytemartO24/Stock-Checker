@@ -310,6 +310,68 @@ domestic market, country picker elsewhere, no cross-fallback), scoped
 extraction (never a whole-page regex), and the named outcome taxonomy in
 which UNKNOWN means "we did not understand this page", not "no stock".
 
+### What was harvested from news-notifier (audited 2026-09-09)
+
+A line-by-line diff of this module against
+`news-notifier/pilot/eu_multimarket/`. Recorded so the comparison is not
+redone, and so nothing here gets "simplified" back out.
+
+**Adopted, because they fix real defects:**
+
+- **Wait for the client-side blocks before reading the page.**
+  `CONTENT_SELECTORS` is awaited for up to 6s before `page.content()`. Amazon
+  injects delivery, seller and price AFTER `domcontentloaded` — confirmed
+  against a real `.de` page whose raw server HTML had none of them despite
+  being a normal purchasable listing. Reading immediately is a race, and
+  losing it looks exactly like "this product has no date": a confidently wrong
+  answer, not a visible failure. This was missing here and very likely caused
+  some of the `no date` results in the first overnight run.
+- **`channel="chromium"`** on launch, which news-notifier ran on for months.
+  It is a different binary from Playwright's bundled build, so navigation and
+  download-prompt behaviour can genuinely differ. Wrapped in a fallback: if
+  that channel is not installed, launching would fail and take the whole
+  market with it, which is worse than any behavioural difference.
+
+**Deliberately NOT adopted, with reasons:**
+
+- Its `no_date_signals` ("release date has not been announced", "coming
+  soon"). It needed them to distinguish NO DATE YET from UNKNOWN in its
+  outcome taxonomy. Here a product with no delivery block simply has
+  `delivery_date=None`, saying the same thing. They were briefly ported, never
+  read, and have been removed — config that looks live but is never used is
+  worse than absent.
+- Its NO OFFER case ("See All Buying Options" with no add-to-cart). Already
+  covered: no buyable button means `in_stock=False`.
+- Its `describe_selector` / page-kind diagnostics (ABSENT vs PRESENT BUT
+  EMPTY, the client-side-injection signature). Genuinely useful for debugging
+  a parse failure, but the content wait above should remove most of them.
+  Worth revisiting if `no date` shows up on a listing that visibly has one.
+
+**Where this project is now AHEAD of news-notifier — do not "restore" these:**
+
+- **The warm-up goes through `safe_goto`.** news-notifier's `open_market` uses
+  a bare `page.goto`, so a download prompt during warm-up loses the whole
+  market. Its `safe_goto` comment says every navigation must go through it;
+  its own warm-up does not.
+- **Warm-up failure is recovered by replacing the PAGE**, not re-navigating
+  it. A download-aborted navigation leaves the page at
+  `chrome-error://chromewebdata/`, and re-issuing the goto on that same page
+  lands there again — 6 of 36 overnight runs failed that way, all attempts
+  together. A fresh page in the same context keeps the warmed-up cookies.
+- **The location modal is awaited by its contents**, not a fixed 1500ms.
+  `de` and `es` each failed once overnight with "no country picker".
+- **Delivery dates are compared as RESOLVED dates, not by re-parsing the
+  display string.** This is the important one. Amazon shows dates without a
+  year, and the parser assumes next year for one already past — so a stored
+  baseline of "22 September" silently became September NEXT year the moment
+  that day went by, ~350 days out, and every real date then looked like an
+  enormous improvement: a nonsense "moved earlier: 22 September -> 5 October",
+  guaranteed on a schedule. news-notifier screens stored dates by
+  plausibility, which CANNOT catch this — 350 days is inside the 400-day
+  window. `DeliveryState` stores `date_iso`/`alerted_iso` and compares those.
+  An entry without them (written by an older version) re-anchors quietly
+  rather than firing.
+
 ### Adding a store
 
 ```bash

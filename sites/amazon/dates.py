@@ -142,55 +142,74 @@ class DeliveryState:
             except (json.JSONDecodeError, OSError) as e:
                 logger.warning("%s unreadable (%s) — starting empty", path, e)
 
-    def assess(self, key: str, current: str | None, months: dict) -> tuple[str | None, bool]:
-        """Return (baseline shown to the user, worth alerting).
+    def observe(self, key: str, display: str | None, iso: str | None) -> tuple[str | None, bool]:
+        """Record this reading and return (baseline shown to the user, alert?).
 
-        Rules, ported unchanged:
+        Comparison is on the RESOLVED date, never by re-parsing the display
+        string. That is not a style choice — re-parsing was a guaranteed bug.
+        Amazon shows dates without a year ("22 September") and the parser
+        assumes next year for one already past, so a stored baseline silently
+        became ~350 days in the FUTURE the moment its day went by, and every
+        real date then looked like an enormous improvement: a nonsense
+        "moved earlier: 22 September -> 5 October", on a schedule.
+        Plausibility screening cannot catch it either, because 350 days is
+        inside the 400-day window. Storing the resolved date removes the
+        ambiguity instead of trying to detect it.
+
+        Rules, otherwise as ported:
           no date now          -> drop the baseline, so a date reappearing
                                   reads as newly promised
           no baseline yet      -> alert (it just became promised)
-          slipped later        -> re-anchor SILENTLY; the date we told you
-                                  about is no longer on offer, so future
-                                  improvements are judged against what is
-                                  actually promised now
+          slipped later        -> re-anchor SILENTLY; the date we were told
+                                  about is no longer on offer
           earlier by >= N days -> alert, re-anchor
-          earlier by < N days  -> stay quiet AND keep the old baseline, so
-                                  further moves accumulate
+          earlier by < N days  -> quiet, KEEP the old baseline so further
+                                  moves accumulate
         """
         entry = self._entries.get(key, {})
-        # An absent key (not None) means state written before this field
-        # existed; seed from the last seen date so upgrading does not fire for
-        # every product that already had one.
-        baseline = entry.get("alerted_date") if "alerted_date" in entry else entry.get("date")
+        baseline_display = entry.get("alerted_date")
+        baseline_iso = entry.get("alerted_iso")
 
-        new_parsed = parse_date(current, months)
-        base_parsed = parse_date(baseline, months)
+        baseline, alerted = self._decide(key, display, iso, baseline_display, baseline_iso)
+        self._entries[key] = {
+            "date": display,
+            "date_iso": iso,
+            # What the next run measures against.
+            "alerted_date": display if alerted else baseline,
+            "alerted_iso": iso if alerted else (baseline_iso if baseline else None),
+            "last_seen": _utc_now(),
+        }
+        return baseline, alerted
 
-        if new_parsed is None:
+    def _decide(self, key, display, iso, baseline_display, baseline_iso):
+        if iso is None:
             return None, False
-        if base_parsed is None:
-            return baseline, True
-        if new_parsed > base_parsed:
-            logger.info("%s: date slipped later (%r -> %r), re-anchoring quietly",
-                        key, baseline, current)
-            return current, False
+        if baseline_iso is None:
+            # Either genuinely new, or state written before the resolved date
+            # was stored. A display-only baseline cannot be compared, so
+            # re-anchor quietly — upgrading must not fire for every product
+            # that already had a date.
+            if baseline_display:
+                logger.info("%s: baseline %r predates resolved-date storage — "
+                            "re-anchoring quietly", key, baseline_display)
+                return display, False
+            return None, True
 
-        days_earlier = (base_parsed - new_parsed).days
+        current = datetime.date.fromisoformat(iso)
+        baseline = datetime.date.fromisoformat(baseline_iso)
+        if current > baseline:
+            logger.info("%s: date slipped later (%r -> %r), re-anchoring quietly",
+                        key, baseline_display, display)
+            return display, False
+
+        days_earlier = (baseline - current).days
         if days_earlier >= self.min_improvement_days:
-            return baseline, True
+            return baseline_display, True
         if days_earlier:
             logger.info("%s: only %d day(s) earlier than the last alerted %r "
                         "(threshold %d) — quiet, keeping the baseline so moves accumulate",
-                        key, days_earlier, baseline, self.min_improvement_days)
-        return baseline, False
-
-    def record(self, key: str, current: str | None, baseline: str | None, alerted: bool) -> None:
-        self._entries[key] = {
-            "date": current,
-            # What the next run measures against.
-            "alerted_date": current if alerted else baseline,
-            "last_seen": _utc_now(),
-        }
+                        key, days_earlier, baseline_display, self.min_improvement_days)
+        return baseline_display, False
 
     def prune(self, keep: set[str]) -> int:
         stale = set(self._entries) - keep

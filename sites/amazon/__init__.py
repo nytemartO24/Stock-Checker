@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Iterator
 
 from bs4 import BeautifulSoup
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
 
 from sites.amazon import browser as amazon_browser
 from sites.amazon import dates as dates_mod
@@ -93,6 +93,17 @@ DELIVERY_SELECTORS = [
 
 INTERNATIONAL_BANNER = "international shopping transition alert"
 
+# Wait for ANY of these before reading the page. Amazon injects the delivery,
+# seller and price blocks client-side, AFTER domcontentloaded — confirmed
+# against a real .de page whose raw server HTML had none of them despite being
+# a normal purchasable listing. Reading immediately is a race, and losing it
+# looks exactly like "this product has no date", which is a confidently wrong
+# answer rather than a visible failure. news-notifier waits 6s here and its
+# comment records that a fixed sleep was not enough even on .se.
+CONTENT_SELECTORS = (
+    DELIVERY_SELECTORS + AVAILABILITY_SELECTORS + BUYABLE_SELECTORS + [SELLER_SELECTOR]
+)
+
 # Parse the destination OUT of the banner rather than asking whether the
 # country appears anywhere on the page. A whole-page check is useless here:
 # once the location is pinned, the glow ingress names the destination on
@@ -122,6 +133,7 @@ class ParsedProduct:
     is_amazon_seller: bool | None
     delivery_date: str | None = None
     delivery_days: int | None = None
+    delivery_iso: str | None = None
     untrusted: str | None = None
 
 
@@ -152,7 +164,7 @@ def parse_product(html: str, config: dict, *, delivery_country: str) -> ParsedPr
         destination = international_destination(page_text)
         if destination.lower() != delivery_country.strip().lower():
             return ParsedProduct(
-                title, False, None, None, None, None, None, None, None,
+                title, False, None, None, None, None, None, None, None, None,
                 untrusted=(f"page dispatches to {destination or 'an unknown country'}, "
                            f"not {delivery_country}"),
             )
@@ -181,7 +193,7 @@ def parse_product(html: str, config: dict, *, delivery_country: str) -> ParsedPr
 
     # Delivery date, scoped to a matched delivery container only.
     delivery_text = _first_text(soup, DELIVERY_SELECTORS)
-    delivery_date = delivery_days = None
+    delivery_date = delivery_days = delivery_iso = None
     if delivery_text:
         match = dates_mod.pattern_for(config["months"]).search(delivery_text)
         if match:
@@ -192,6 +204,8 @@ def parse_product(html: str, config: dict, *, delivery_country: str) -> ParsedPr
             if dates_mod.is_plausible(parsed):
                 delivery_date = " ".join(match.group().split()).strip().rstrip(",")
                 delivery_days = dates_mod.days_until(parsed)
+                # Stored so comparison never re-parses a yearless string.
+                delivery_iso = parsed.isoformat()
 
     return ParsedProduct(
         title=title,
@@ -208,6 +222,7 @@ def parse_product(html: str, config: dict, *, delivery_country: str) -> ParsedPr
         is_amazon_seller=is_amazon,
         delivery_date=delivery_date,
         delivery_days=delivery_days,
+        delivery_iso=delivery_iso,
     )
 
 
@@ -374,6 +389,16 @@ class AmazonChecker(SiteChecker):
                 logger.warning("[%s] %s %s: landed on %s — skipping", self.name, market, asin, page.url)
                 return None
 
+        # Give the client-side blocks a chance to arrive before reading. On
+        # timeout, fall through and parse anyway — the page may legitimately
+        # have none of them (an unavailable listing has no delivery block), and
+        # the parser reports that honestly.
+        try:
+            page.wait_for_selector(", ".join(CONTENT_SELECTORS), timeout=6000)
+        except PlaywrightTimeoutError:
+            logger.info("[%s] %s %s: no target selector within 6s — parsing as-is",
+                        self.name, market, asin)
+
         parsed = parse_product(page.content(), config, delivery_country=country)
         if parsed.untrusted:
             # Not a result: recording it would let a wrong-destination page
@@ -397,8 +422,7 @@ class AmazonChecker(SiteChecker):
         # is the difference between unavailable and buyable.
         key = f"{market}:{asin}"
         self._seen_keys.add(key)
-        baseline, improved = deliveries.assess(key, parsed.delivery_date, config["months"])
-        deliveries.record(key, parsed.delivery_date, baseline, improved)
+        baseline, improved = deliveries.observe(key, parsed.delivery_date, parsed.delivery_iso)
         alert_reason = None
         if improved:
             alert_reason = (

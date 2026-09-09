@@ -5,6 +5,7 @@ answers in news-notifier, so they are pinned here rather than trusted.
 """
 
 import datetime
+import json
 
 import pytest
 
@@ -61,32 +62,37 @@ def test_implausible_dates_are_rejected():
     assert is_plausible(None) is False
 
 
+def disp(n: int) -> str:
+    return in_days(n).strftime("%d %B")
+
+
+def iso(n: int) -> str:
+    return in_days(n).isoformat()
+
+
 def test_no_baseline_yet_alerts(tmp_path):
     state = DeliveryState(tmp_path / "d.json")
-    baseline, improved = state.assess("de:A1", "24 September", DE)
-    assert improved is True and baseline is None
+    baseline, alerted = state.observe("de:A1", disp(14), iso(14))
+    assert alerted is True and baseline is None
 
 
 def test_slipping_later_re_anchors_silently(tmp_path):
-    """The date we told you about is gone, so later improvements must be
-    judged against what is actually promised now — but you are not pinged for
-    bad news."""
+    """The date we were told about is gone, so later improvements must be judged
+    against what is actually promised now — but no ping for bad news."""
     state = DeliveryState(tmp_path / "d.json")
-    near, far = in_days(10), in_days(60)
-    state.record("de:A1", near.strftime("%d %B"), None, True)
-    baseline, improved = state.assess("de:A1", far.strftime("%d %B"), DE)
-    assert improved is False
-    assert baseline == far.strftime("%d %B")       # re-anchored on the worse date
+    state.observe("de:A1", disp(10), iso(10))
+    baseline, alerted = state.observe("de:A1", disp(60), iso(60))
+    assert alerted is False
+    assert baseline == disp(60)                      # re-anchored on the worse date
 
 
 def test_small_improvement_stays_quiet_but_keeps_the_baseline(tmp_path):
     """Amazon flickers estimates by a day; that is noise, not news."""
     state = DeliveryState(tmp_path / "d.json", min_improvement_days=7)
-    start = in_days(30)
-    state.record("de:A1", start.strftime("%d %B"), None, True)
-    baseline, improved = state.assess("de:A1", (start - datetime.timedelta(days=2)).strftime("%d %B"), DE)
-    assert improved is False
-    assert baseline == start.strftime("%d %B")     # baseline NOT moved
+    state.observe("de:A1", disp(30), iso(30))
+    baseline, alerted = state.observe("de:A1", disp(28), iso(28))
+    assert alerted is False
+    assert baseline == disp(30)                      # baseline NOT moved
 
 
 def test_a_creeping_date_eventually_alerts(tmp_path):
@@ -94,15 +100,8 @@ def test_a_creeping_date_eventually_alerts(tmp_path):
     date walking earlier one day at a time never clears the threshold in a
     single step, so comparing against the last READING would never ping."""
     state = DeliveryState(tmp_path / "d.json", min_improvement_days=7)
-    start = in_days(40)
-    state.record("de:A1", start.strftime("%d %B"), None, True)
-
-    fired = []
-    for step in range(1, 9):
-        current = (start - datetime.timedelta(days=step)).strftime("%d %B")
-        baseline, improved = state.assess("de:A1", current, DE)
-        state.record("de:A1", current, baseline, improved)
-        fired.append(improved)
+    state.observe("de:A1", disp(40), iso(40))
+    fired = [state.observe("de:A1", disp(40 - step), iso(40 - step))[1] for step in range(1, 9)]
     assert any(fired), "a date creeping earlier must eventually alert"
     assert fired.index(True) == 6, "should fire exactly when 7 days have accumulated"
 
@@ -111,18 +110,49 @@ def test_losing_the_date_clears_the_baseline(tmp_path):
     """So its return reads as newly promised rather than being compared to a
     stale figure."""
     state = DeliveryState(tmp_path / "d.json")
-    state.record("de:A1", in_days(20).strftime("%d %B"), None, True)
-    baseline, improved = state.assess("de:A1", None, DE)
-    assert (baseline, improved) == (None, False)
+    state.observe("de:A1", disp(20), iso(20))
+    assert state.observe("de:A1", None, None) == (None, False)
+
+
+def test_a_yearless_baseline_cannot_fire_nonsense(tmp_path):
+    """The bug this design prevents, which WAS guaranteed on a schedule.
+
+    Amazon shows dates without a year, and the parser assumes next year for a
+    date already past — so a stored "22 September" silently became September
+    NEXT year once that day went by, ~350 days out, and every real date then
+    looked like an enormous improvement. Plausibility screening cannot catch
+    it: 350 days is inside the 400-day window. Comparing resolved dates
+    removes the ambiguity rather than trying to detect it.
+    """
+    path = tmp_path / "d.json"
+    # State as an older version wrote it: display strings only, no resolved date.
+    path.write_text(json.dumps({"de:A1": {"date": disp(-30), "alerted_date": disp(-30)}}),
+                    encoding="utf-8")
+    baseline, alerted = DeliveryState(path).observe("de:A1", disp(14), iso(14))
+    assert alerted is False, "an uncomparable baseline must not fire an alert"
+    assert baseline == disp(14), "it should re-anchor quietly on the fresh date"
 
 
 def test_upgrading_does_not_fire_for_everything_already_dated(tmp_path):
-    """An entry written before alerted_date existed is seeded from the last
-    seen date, so adding the field must not produce a burst."""
+    """Entries written before resolved dates were stored must not produce a
+    burst of alerts the first time the new code runs."""
     path = tmp_path / "d.json"
-    path.write_text('{"de:A1": {"date": "24 September"}}', encoding="utf-8")
-    _, improved = DeliveryState(path).assess("de:A1", "24 September", DE)
-    assert improved is False
+    path.write_text(json.dumps({f"de:A{i}": {"date": disp(20), "alerted_date": disp(20)}
+                                for i in range(5)}), encoding="utf-8")
+    state = DeliveryState(path)
+    fired = [state.observe(f"de:A{i}", disp(20), iso(20))[1] for i in range(5)]
+    assert not any(fired)
+
+
+def test_the_resolved_date_is_persisted(tmp_path):
+    """Without this the next run is back to re-parsing a yearless string."""
+    path = tmp_path / "d.json"
+    state = DeliveryState(path)
+    state.observe("de:A1", disp(14), iso(14))
+    state.save()
+    stored = json.loads(path.read_text(encoding="utf-8"))["de:A1"]
+    assert stored["date_iso"] == iso(14)
+    assert stored["alerted_iso"] == iso(14)
 
 
 def _result(**kw):

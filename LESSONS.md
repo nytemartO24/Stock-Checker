@@ -84,3 +84,17 @@ CLAUDE.md and trim this file.
   call on the same object cannot. Also: the failure was only visible because
   the unpinned-location guard logs loudly and marks the run incomplete —
   without it, .se would have been quietly reporting a German destination.
+
+- 2026-09-09: Diffing this module against news-notifier found a defect I had
+  introduced by omission: it waits up to 6s for the delivery/seller/price
+  blocks to be injected before reading the page, and I read `page.content()`
+  immediately. Losing that race looks identical to "this product has no date".
+  Porting a module means porting its WAITS, not just its selectors — the
+  timing was as load-bearing as the parsing.
+- 2026-09-09: Storing delivery dates as displayed ("22 September") and
+  re-parsing them was a bug on a timer: the parser assumes next year for a
+  past date, so every stored baseline silently jumped ~350 days into the
+  future once its day passed, making any real date look like a huge
+  improvement. news-notifier's plausibility screen cannot catch it (350 < 400
+  days). Fixed by storing the resolved ISO date and comparing that. When a
+  value needs comparing later, store the unambiguous form, not the pretty one.

@@ -226,7 +226,19 @@ def open_market(playwright, market: str, config: dict, *, country: str, postcode
     unpinned session describes wherever Amazon guessed, so it is not
     comparable to the other markets and shouldn't be pruned against.
     """
-    browser = playwright.chromium.launch(headless=headless)
+    # news-notifier launches with channel="chromium" — the branded build
+    # rather than Playwright's bundled one — and ran for months that way. It is
+    # a different binary, so download-prompt and navigation behaviour can
+    # genuinely differ, and .se's chrome-error failures are exactly that kind
+    # of symptom. Tried first, but NEVER at the cost of the run: if that
+    # channel is not installed, launching would fail and take the whole market
+    # with it, which is far worse than a behavioural difference.
+    try:
+        browser = playwright.chromium.launch(headless=headless, channel="chromium")
+    except Exception as e:
+        logger.info("[%s] chromium channel unavailable (%s) — using the bundled build",
+                    market, type(e).__name__)
+        browser = playwright.chromium.launch(headless=headless)
     context = browser.new_context(user_agent=USER_AGENT, locale=f"en-{market.upper()}")
     page = context.new_page()
 

@@ -43,19 +43,13 @@ ENGLISH_UNAVAILABLE_SIGNALS = [
     "this item cannot be shipped",
 ]
 
-# A listing can be perfectly orderable and simply not say when it will
-# arrive. That is a different answer from "sold out" and worth its own state.
-#
-# NOTE a bare "release date" is deliberately absent: practically every Amazon
-# toy listing carries a "Release date : 1 August 2026" row in its details
-# table, so matching it classifies normal pre-orders — including ones that DO
-# have an estimate — as having no date.
-ENGLISH_NO_DATE_SIGNALS = [
-    "release date has not been announced",
-    "date has not been announced",
-    "not yet available",
-    "coming soon",
-]
+# NOT ported from news-notifier: its no_date_signals ("release date has not
+# been announced", "coming soon"). It needed them to tell NO DATE YET apart
+# from UNKNOWN in its outcome taxonomy. Here a product with no delivery block
+# simply has delivery_date=None, which says the same thing — so carrying the
+# list would be config that looks live and is never read. Its NO OFFER case
+# ("See All Buying Options" with no add-to-cart) is likewise already covered:
+# no buyable button means in_stock=False.
 
 NOT_DELIVERABLE_SIGNAL = "cannot be dispatched to your selected delivery location"
 
@@ -126,7 +120,6 @@ def _merge(config: dict) -> dict:
     merged = dict(config)
     merged["months"] = {**config["native_months"], **ENGLISH_MONTHS}
     merged["unavailable_signals"] = ENGLISH_UNAVAILABLE_SIGNALS + config["native_unavailable"]
-    merged["no_date_signals"] = list(ENGLISH_NO_DATE_SIGNALS)
     return merged
 
 
