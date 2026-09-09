@@ -404,6 +404,84 @@ product-page fetch per item per store, and has not been built. This is the
 open route to "am I missing stock purely because of naming", and the thing to
 design before the watchlists grow.
 
+**Measured 2026-09-09 across 8 retailers** (`discover_stores.py verify`): only
+rarewaves and jap-one publish `gtin13` in JSON-LD, but **6 of 8 pages contain
+the raw EAN somewhere in the HTML** — so a plain text search for the barcode
+bridges stores that expose no structured data at all. gameshop remains the
+hard case: internal SKU only, no EAN anywhere. Also note the product has a
+FOURTH name — the Fandom wiki calls it "SharkScale 4-50UF" — and that Ginza
+and gameshop list unreleased items under Hasbro's US-national-park codenames
+(Kobuk Valley, Zion, Yellowstone, Haleakala, Lake Clark, Mammoth Cave, Gateway
+Arch, Badlands, Big Bend, Wind Cave), which no name-based rule can ever
+resolve.
+
+### Finding a store (`scripts/discover_stores.py`)
+
+`audit_store.py` answers "what is in this store". This answers the question
+before it: **which stores exist at all**. Three modes, deliberately separate
+because they fail in different ways.
+
+    python scripts/discover_stores.py search --ean 5010996385222 --regions se,world
+    python scripts/discover_stores.py probe --domains config/candidate_stores.txt
+    python scripts/discover_stores.py verify --urls urls.txt --ean 5010996385222
+
+- **`search`** puts a query to several engines under several REGION tokens.
+  Measured 2026-09-09: **Bing/se carries nearly the whole yield**, and only
+  because every Bing result is wrapped in `/ck/a?u=a1<base64url>` — read the
+  raw hrefs and Bing looks like it returned nothing. DDG-lite challenges after
+  roughly one query, Mojeek 403s about half the time (more often on quoted
+  queries), and Marginalia's `old-search.` host answers 200 with a ~1KB stub,
+  which reads as "nothing found" rather than as the dead endpoint it is. Hence
+  the deliberately slow `ENGINE_DELAY`.
+- **`probe`** asks each candidate shop's OWN search. **This is the high-yield
+  mode**: a small shop's product pages are frequently not indexed anywhere,
+  while its internal search answers instantly, and it is the only method that
+  works for a shop nobody links to.
+- **`verify`** reads JSON-LD `gtin13` off a product page — see the naming
+  problem above. This is the concrete route to it.
+
+**The control query is what makes `probe` worth anything.** Counting product
+links is not evidence: `/?s=x&post_type=product` on a shop that is not
+WooCommerce is a catalogue URL with an ignored query, so hlj.com "matched" 714
+products and rarewaves offered 28 Days Later. So every candidate path is asked
+a second time for a nonsense word, and a path answering the same for both is
+reported as ignoring the query. Two corollaries learned the hard way:
+
+- **Control-test each path, don't stop at the first one returning links.**
+  WordPress answers `/search?q=` with a generic grid, so gameshop.se — a store
+  we already track and know stocks these — matched the wrong path and was
+  written off, while `/?s=`, the path that works, was never tried.
+- **Never reject a page for containing an empty-state phrase.** Themes ship
+  "inga resultat" in the markup whether it is showing or not. The control
+  query already does that job, correctly.
+
+Verdicts distinguish **no stock** from **blocked (403)**, **client-side search**
+and **product-URL shape we do not recognise**. That distinction is the point:
+collapsing them into "no results" would silently hide every shop we merely
+failed to ask properly, which is the exact failure the tool exists to fix. It
+independently diagnoses ginza.se as client-side — matching how that module
+actually had to be built.
+
+`config/candidate_stores.txt` holds the domains to probe, annotated. It is not
+a tracked-store list; `sites.yaml` owns that.
+
+**Found 2026-09-09 that the web search had missed entirely:**
+
+| store | why it matters |
+|---|---|
+| **rarewaves.com** | Shopify, publishes `gtin13`, and **prices in SEK** (134 kr). The cheapest possible store to add. |
+| jap-one.com | Magento, publishes `gtin13`, EUR 9.99 |
+| bigshopper.se | Swedish, carries the product |
+| storegan.it, goldsaucerstore.com | put the EAN in their URLs |
+
+14 of 48 candidate shop searches are usable over plain HTTP. Most Swedish
+chains (lekia, cdon, coolshop, adlibris, jollyroom, boozt, teknikproffset,
+lekmer, fyndiq) render search **client-side** — they need Ginza's treatment
+(find the JSON endpoint the page calls) or a browser, and are listed as such
+rather than as empty. Several UK/US hobby shops (entertainmentearth,
+bigbadtoystore, magicmadhouse, amiami, plazajapan, beysandbricks) answer 403
+to plain HTTP.
+
 ### Adding a store
 
 ```bash

@@ -98,3 +98,8 @@ CLAUDE.md and trim this file.
   improvement. news-notifier's plausibility screen cannot catch it (350 < 400
   days). Fixed by storing the resolved ISO date and comparing that. When a
   value needs comparing later, store the unambiguous form, not the pretty one.
+- Counting search results without a CONTROL query measures nothing. `/?s=x&post_type=product` on a non-WooCommerce shop is a catalogue URL with an ignored query, so hlj.com reported 714 "matches" and rarewaves offered 28 Days Later. Asking the same path for a nonsense word and comparing is the whole test — and it must run PER PATH, because stopping at the first path that returns links picked WordPress's generic grid and wrote off gameshop.se, a store we already track.
+- Rejecting a results page for containing "inga resultat" / "no results" is wrong: themes ship the empty-state string whether or not it is displayed. It threw away a store known to stock the product.
+- A search engine returning nothing and a search engine REFUSING are different facts, and both look like zero. Bing wraps every result in `/ck/a?u=a1<base64>`, so reading raw hrefs reports "0 results" from a perfectly good response; DDG-lite answers HTTP 202 with a bot challenge; Marginalia's `old-search.` host answers 200 with a 1KB stub. Report blocked/failed per engine or the yield is a lie.
+- Decoding a redirect wrapper does not guarantee a URL. A Bing payload that decoded to a non-URL reached `url.split('/')[2]` and killed the whole scan; everything now passes through one `usable()` gate.
+
