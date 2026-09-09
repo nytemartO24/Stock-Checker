@@ -213,6 +213,53 @@ sites:
       min_delay_seconds: 1.5
       max_delay_seconds: 4.0
 
+  rarewaves:
+    type: rarewaves
+    enabled: true
+    # A Shopify store that sites/shopify.py CANNOT serve: 1348 collections and
+    # no Beyblade one. /collections/beyblade answers 200 with zero products,
+    # which is worse than a 404 — it reads as a working, empty collection. So
+    # the listing comes from its own search API (Klevu), like ginza.
+    #
+    # NOTE: UK-based. It quotes SEK and ships here, but shipping is not
+    # comparable to an EU store's — it is tracked because the price is good and
+    # the catalogue is unusually complete, not because it is convenient.
+    search: beyblade
+    currency: SEK
+    currency_symbol: "kr"
+    # Klevu answers in GBP and only GBP. Setting this makes the module fetch
+    # Shopify's own SEK price for an item that is in stock AND may notify —
+    # a handful of requests, not one per product. Remove it to keep GBP.
+    price_country: SE
+    # WATCHLIST ENTRIES ARE EANs. Unique to this store: every handle and sku
+    # here IS the barcode, so an entry can be derived from a barcode instead of
+    # looked up by hand. Everywhere else this is impossible.
+    watchlist:
+      - "5010996385222"  # Scale Shark 4-50UF          (= ginza "Bbx Kobuk Valley")
+      - "5010996385086"  # Reaper Rhino C 4-55D starter
+      - "5010996385321"  # Stun Medusa 9-60GB starter
+      - "5010996309457"  # Drop Attack Battle Set
+    alert_on_new_products: true
+    title_exclude:
+      # This store sells the anime on disc and the manga volumes next to the
+      # toys, and the whole Beyblade back-catalogue. Same pruning as elsewhere.
+      - beyblade burst
+      - switchstrike
+      - metal fusion
+      - metal masters
+      - metal fury
+      - grevolution
+      - vforce
+      - "vol."
+      - "vol "
+      - saison
+      - coffret
+    rate_limit:
+      # Two POSTs per run for the whole catalogue, plus a price lookup only for
+      # items that would alert.
+      min_delay_seconds: 1.0
+      max_delay_seconds: 3.0
+
   toysnowman:
     type: shopify
     enabled: true

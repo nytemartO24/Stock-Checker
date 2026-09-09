@@ -144,3 +144,34 @@ class PoliteClient:
 
     def get_json(self, url: str, headers: dict[str, str] | None = None) -> Any:
         return self.get(url, headers=headers).json()
+
+    def post_json(self, url: str, json: Any,
+                  headers: dict[str, str] | None = None) -> Any:
+        """POST a JSON body, with the same pacing and backoff as `get`.
+
+        Added for rarewaves: its catalogue lives behind a Klevu search API that
+        only accepts POST. It goes through this client rather than raw httpx so
+        a search API cannot quietly escape the politeness policy — the rule in
+        CLAUDE.md is per site, not per HTTP verb.
+        """
+        delay = max(self.max_delay, 2.0)
+        for attempt in range(1, self.max_retries + 1):
+            self.pacer.wait()
+            response = self._client.post(url, json=json, headers=headers)
+            if response.status_code not in BACKOFF_STATUSES:
+                response.raise_for_status()
+                return response.json()
+
+            retry_after = response.headers.get("Retry-After")
+            wait = float(retry_after) if retry_after and retry_after.isdigit() else delay
+            if attempt == self.max_retries:
+                break
+            logger.warning(
+                "POST %s returned %s (attempt %d/%d) — backing off %.1fs",
+                url, response.status_code, attempt, self.max_retries, wait,
+            )
+            time.sleep(wait)
+            delay *= 2
+
+        raise RateLimited(
+            f"POST {url} still returning {response.status_code} after {self.max_retries} attempts")
