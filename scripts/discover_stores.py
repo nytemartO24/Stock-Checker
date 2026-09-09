@@ -659,6 +659,37 @@ def verify_url(pool: HostPool, url: str, eans: list[str]) -> dict:
 # Reporting
 # ---------------------------------------------------------------------------
 
+def confirm(pool: HostPool, found: dict[str, Candidate], eans: list[str],
+            terms: list[str]) -> None:
+    """Fetch each candidate and check the page mentions what we searched for.
+
+    Engines pad results, and how much they pad depends on where you ask from:
+    the same query that came back clean from a home connection returned Czech
+    legal databases and industrial filter vendors from the VPS. A candidate
+    list nobody checked is therefore mostly noise, and checking is one request
+    per domain — cheap for a research run, and it upgrades "a page somewhere
+    mentioned this" into "this shop's page carries the barcode".
+    """
+    needles = [e for e in eans] + [t.split()[0].lower() for t in terms if t]
+    for candidate in found.values():
+        if candidate.kind == "aggregator":
+            continue
+        url = sorted(candidate.urls, key=len, reverse=True)[0]
+        result = verify_url(pool, url, eans)
+        if result.get("error"):
+            candidate.note = result["error"][:60]
+            continue
+        candidate.platform = result["platform"]
+        candidate.gtins = set(result["gtins"])
+        candidate.price = result["price"]
+        candidate.ean_in_page = bool(result["ean_in_page"])
+        if result["title"]:
+            candidate.titles = [result["title"]]
+        body_hit = candidate.ean_in_page or any(
+            n and result["title"] and n in result["title"].lower() for n in needles)
+        candidate.note = "confirmed" if body_hit else "page does not mention the product"
+
+
 def report_search(found: dict[str, Candidate], log: list[str]) -> str:
     lines = ["# Store discovery — engine search", "", "## Engine yield", ""]
     lines += [f"    {entry}" for entry in log]
@@ -669,9 +700,19 @@ def report_search(found: dict[str, Candidate], log: list[str]) -> str:
                            key=lambda c: c.domain)
             if not group:
                 continue
-            lines += ["", f"## {label} — {kind} ({len(group)})", ""]
+            confirmed = [c for c in group if c.note == "confirmed"]
+            group = confirmed + [c for c in group if c.note != "confirmed"]
+            lines += ["", f"## {label} — {kind} ({len(group)}"
+                          + (f", {len(confirmed)} confirmed)" if confirmed else ")"), ""]
             for c in group:
-                lines.append(f"- **{c.domain}** — found by {', '.join(sorted(c.found_by))}")
+                mark = "**CONFIRMED** " if c.note == "confirmed" else ""
+                lines.append(f"- {mark}**{c.domain}** — found by {', '.join(sorted(c.found_by))}")
+                if c.platform or c.gtins or c.price:
+                    lines.append(f"  - platform `{c.platform or '?'}`"
+                                 f"  price `{c.price or '?'}`"
+                                 f"  gtin `{','.join(sorted(c.gtins)) or '-'}`")
+                for title in c.titles:
+                    lines.append(f"  - {title}")
                 for url in sorted(c.urls)[:2]:
                     lines.append(f"  - {url}")
     return "\n".join(lines) + "\n"
@@ -690,6 +731,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--domains", help="probe: file of domains, one per line")
     parser.add_argument("--urls", help="verify: file of URLs, one per line")
     parser.add_argument("--probe-term", default="beyblade")
+    parser.add_argument("--verify-found", action="store_true",
+                        help="search mode: fetch each candidate and keep only those whose "
+                             "page actually mentions the product (strongly recommended)")
     parser.add_argument("--min-delay", type=float,
                         help="default 1.0; search mode defaults slower, see ENGINE_DELAY")
     parser.add_argument("--max-delay", type=float)
@@ -711,6 +755,14 @@ def main(argv: list[str] | None = None) -> int:
                 parser.error("search needs at least one --ean or --term")
             found, log = run_search(pool, args.ean, args.term,
                                     [r.strip() for r in args.regions.split(",") if r.strip()])
+            if args.verify_found:
+                # Shops answer at shop pace, not engine pace — the slow
+                # ENGINE_DELAY is for engines only.
+                shop_pool = HostPool(1.0, 2.5)
+                try:
+                    confirm(shop_pool, found, args.ean, args.term)
+                finally:
+                    shop_pool.close()
             for entry in log:
                 print("   ", entry)
             report = report_search(found, log)
