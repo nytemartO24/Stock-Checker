@@ -467,7 +467,14 @@ independently diagnoses ginza.se as client-side — matching how that module
 actually had to be built.
 
 `config/candidate_stores.txt` holds the domains to probe, annotated. It is not
-a tracked-store list; `sites.yaml` owns that.
+a tracked-store list; `sites.yaml` owns that. **Two rules decide what belongs
+in it, both from the user: ships to Sweden from the EU, and a wide selection.**
+A shop with three Beyblades is not worth a request every 30 minutes. Entries
+removed under those rules are listed in the file with the reason, so a later
+search does not re-add them.
+
+`config/candidate_stores_eu.txt` is machine-written by `directory` mode — do
+not hand-edit it.
 
 #### Geography is a REQUIREMENT, not a grouping
 
@@ -491,7 +498,15 @@ user found it, the catalogue is unusually complete and it quotes SEK.)
         --out-domains config/candidate_stores_eu.txt
 
 Every mapped `shop=toys|games|hobby|model|video_games` carrying a `website`
-tag, per country. Free, no key, no bot wall, and it surfaced shops no engine
+tag, per country. **Queries are TILED (`--grid`, default 3x3) and that is what
+makes it work**: whole-country boxes came back 504 or read-timed-out for DE, NL,
+AT, FI, FR and DK against both public instances, while small BE returned 316
+shops instantly. The instances cap query cost, so the fix is smaller queries,
+never a longer timeout. A failed tile is skipped and counted rather than losing
+the country, and the result says so. Boxes, not `area["ISO3166-1"]`: resolving a
+national boundary relation is exactly the cost that times out, and a box
+crossing a border only changes which bucket a shop lands in, never whether it is
+found. Free, no key, no bot wall, and it surfaced shops no engine
 ever returned — intertoys.nl, top1toys.nl, rofu.de, dreamland.nl,
 spielwaren-kroemer.de, king-jouet.com. Its output is SHOPS, not stockists, so
 it feeds `probe`; that is the division of labour, not a shortcoming.
@@ -503,16 +518,6 @@ it feeds `probe`; that is the division of labour, not a shortcoming.
   searches found no German shop: nothing ever actually asked for one, and the
   request that looked like asking was discarded server-side. `--tld` exists and
   is kept only because it is honest about yielding nothing on Bing.
-- **Price aggregators** — idealo.de, geizhals.de, prisjakt.nu, pricespy,
-  ledenicheur.fr. These have the HIGHEST yield of anything available (one
-  product page lists every retailer with an offer, which is exactly the
-  question we are asking) but ALL answer **403 to plain HTTP from both the dev
-  machine and the VPS**. It is DataDome/Cloudflare, not IP reputation, so the
-  VPS trick does not help. **They are the best remaining lead and they need the
-  browser transport** — Playwright is already installed for Amazon. This is the
-  highest-value unbuilt thing in the project.
-  (billiger.de and beslist.nl answer 200 and are worth parsing without a
-  browser.)
 - **Engine region tokens** (`cc=SE`, `kl=se-sv`) shift ranking slightly and do
   not restrict by country.
 
@@ -551,6 +556,57 @@ lekmer, fyndiq) render search **client-side** — they need Ginza's treatment
 rather than as empty. Several UK/US hobby shops (entertainmentearth,
 bigbadtoystore, magicmadhouse, amiami, plazajapan, beysandbricks) answer 403
 to plain HTTP.
+
+#### The browser transport for discovery (`core/browser.py`)
+
+**Plain HTTP is not viable for this market.** Measured 2026-09-09: **0 of 16**
+German and Dutch shops were readable over httpx — every one either renders its
+search client-side or answers 403 — and every EU price aggregator refuses
+httpx from BOTH the dev machine and the VPS. That rules out IP reputation and
+names the cause as DataDome/Cloudflare fingerprinting. So Chromium is the
+normal transport here, not a fallback:
+
+    python scripts/discover_stores.py probe --browser --domains <file>
+    python scripts/discover_stores.py offers --term "beyblade x starter pack"
+
+`core/browser.py` is the generic half of what `sites/amazon/browser.py` does —
+launch with the `channel="chromium"` fallback, clear the consent wall, wait out
+the bot interstitial, return HTML. It keeps one browser and context per run so a
+cleared challenge and its cookies carry across domains, but a FRESH PAGE per
+fetch, because a failed navigation parks the page at
+`chrome-error://chromewebdata/` where every subsequent goto lands again (the
+bug that cost 6 of 36 overnight Amazon runs). Amazon's own launch predates this
+module and keeps its own copy deliberately — it is live in production; fold it
+in next time it is touched.
+
+#### `offers` mode: price aggregators are the highest-yield source
+
+One aggregator product page lists **every retailer with the product in stock**,
+which is precisely the question this script asks — a search engine can only
+tell you that a page mentioning it exists. **One run found 8 German retailers**
+(galaxus.de, otto.de, kaufland.de, voelkner.de, toynova.de,
+galaxiespielzeug.de, richtiggutesspielzeug.de, einzigundartig.de), more than
+every search-engine attempt in this project combined.
+
+- **idealo's `data-shop-name` value IS the domain** — "galaxus.de", "otto.de
+  (Marktplatzhändler)" — so no redirect chasing is needed. There are no
+  `/relocate` links on the offer list at all. A label that is not a domain
+  ("kds-tuning") is reported for manual lookup rather than guessed into one.
+- **Search by NAME, never the barcode.** On idealo the name query returns the
+  product and the EAN query returns NOTHING; aggregators index manufacturer
+  titles. This generalises: the barcode is for CONFIRMING identity, not for
+  finding shops.
+- **A product-link pattern must accept an optional origin.** idealo emits both
+  relative and absolute hrefs for the same kind of link, and anchoring on
+  `/preisvergleich` matched only the relative ones — which on a real search
+  page was an advert for a fidget cube, while every genuine result was
+  absolute. It looked like a working extractor returning one product.
+- Marketplace stalls (eBay, Amazon Marketplace sellers) are counted separately
+  from shops: "otto.de (Marktplatzhändler)" means the product is on otto.de and
+  is a lead, while "eBay - Shop aus Bern" is one person's listing and is not.
+- **geizhals.de does not clear its challenge** even with the browser (11.9KB,
+  "bot challenge not cleared"). Kept in the table with that recorded, so the
+  next attempt knows it was tried and how it failed.
 
 ### Adding a store
 

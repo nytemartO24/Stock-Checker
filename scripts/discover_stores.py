@@ -195,6 +195,22 @@ SEARCH_PATHS = (
     "/search?type=product&q={q}",
     "/?s={q}&post_type=product",
     "/?s={q}",
+    # German. Shopware is the dominant DE webshop platform and its search
+    # parameter is `sSearch`, which nothing else uses — a scan without it reads
+    # a large part of the German market as "no results". `/suche` is the plain
+    # German word and just as common.
+    "/search?sSearch={q}",
+    "/suche?q={q}",
+    "/suche?sSearch={q}",
+    "/suche/{q}",
+    # Dutch and French.
+    "/zoeken?q={q}",
+    "/zoeken?query={q}",
+    "/recherche?q={q}",
+    "/recherche?controller=search&s={q}",
+    # SAP Commerce / Hybris, which the big chains run.
+    "/search?text={q}",
+    # Swedish.
     "/sok?q={q}",
     "/sok/?q={q}",
     "/sok?query={q}",
@@ -268,6 +284,12 @@ CONTROL_TERM = "qzzxwvk"
 #     a bare-TLD `site:.de`, returning the identical result set.
 # The trade is precision: OSM lists SHOPS, not stockists, so its output is
 # input to `probe` rather than an answer.
+# Overpass answers JSON, and the shared client's default Accept advertises
+# HTML first. Seen once as a bare 406 Not Acceptable, so it is stated
+# explicitly rather than left to a default that has no reason to be right.
+OVERPASS_HEADERS = {"Accept": "application/json",
+                    "Content-Type": "application/x-www-form-urlencoded"}
+
 OVERPASS_HOSTS = (
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
@@ -356,10 +378,11 @@ STALL_NAMES = re.compile(r"(ebay|amazon marketplace|marketplace$|^kds-|hood\.de)
 
 DEFAULT_COUNTRIES = ("DE", "NL", "BE", "AT", "DK", "FI", "FR")
 
-# Politeness cap per shop. Nine search paths plus a control each would be 18
-# requests at one shop to answer one question, which is not a reasonable thing
-# to do to a small retailer.
-MAX_FETCHES_PER_DOMAIN = 8
+# Politeness cap per shop: trying every path plus a control for each would be
+# ~36 requests at one shop to answer one question, which is not a reasonable
+# thing to do to a small retailer. The paths are ordered so the common ones come
+# first, and the budget buys roughly the first eight of them.
+MAX_FETCHES_PER_DOMAIN = 16
 
 # Fuller headers than the shared client's defaults. Measured 2026-09-09: a
 # meaningful share of shops answer 403 to a bare UA and 200 to this — the
@@ -442,7 +465,8 @@ class HostPool:
             detail = getattr(getattr(e, "response", None), "status_code", None)
             return "", f"{type(e).__name__}{f' {detail}' if detail else ''}: {e}"[:160]
 
-    def post(self, url: str, data: dict[str, str]) -> tuple[str, str | None]:
+    def post(self, url: str, data: dict[str, str],
+             headers: dict[str, str] | None = None) -> tuple[str, str | None]:
         """Form POST. Overpass only accepts the query as a POST body."""
         host = urlparse(url).netloc.lower()
         client = self._clients.get(host)
@@ -451,7 +475,7 @@ class HostPool:
                                   timeout=180.0, max_retries=1)
             self._clients[host] = client
         try:
-            return client.post_form(url, data).text, None
+            return client.post_form(url, data, headers).text, None
         except Exception as e:  # noqa: BLE001
             return "", f"{type(e).__name__}: {e}"[:160]
 
@@ -879,7 +903,7 @@ def overpass(pool: HostPool, country: str, grid: int = 3) -> tuple[list[str], st
         )
         elements = None
         for host in OVERPASS_HOSTS:
-            body, error = pool.post(host, {"data": query})
+            body, error = pool.post(host, {"data": query}, OVERPASS_HEADERS)
             if error:
                 continue
             try:
