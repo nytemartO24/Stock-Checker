@@ -40,11 +40,11 @@ sites:
     # first_seen date for spotting newcomers) — this only decides what may
     # interrupt you. EMPTY MEANS EVERYTHING.
     #
-    # Matching is a case-insensitive substring. Two traps, both real:
-    #   * names are not word-order stable — the product quoted as "Shark
-    #     Scale" is titled "Scale Shark 4-50UF", so the plain name misses;
-    #   * a term also matches multi-item BUNDLES containing that product.
-    # The product code ("4-50UF", "3-80FB") is the reliable key.
+    # Entries are exact product HANDLES (slugs), not title terms. Title
+    # matching was tried and dropped: names are not word-order stable (the
+    # item quoted as "Shark Scale" is titled "Scale Shark 4-50UF") and a term
+    # also matches bundles merely containing the product. Look a handle up
+    # with: scripts/audit_store.py <store> --find "<term>"
     # A product never seen before alerts ONCE, regardless of the watchlist —
     # you cannot watchlist something that does not exist yet, which is how a
     # four-item bundle was missed. It is recorded on that run, so it is never
@@ -140,18 +140,14 @@ sites:
     # products sit under generic ones (leksaker, funko-pop) — so a search is
     # the right list. It returns 153 products over 4 pages, in-stock first
     # then out-of-stock, which matters: we must SEE a product while it is
-    # unavailable in order to notice it coming back.
+    # unavailable in order to notice it coming back. 104 survive the
+    # title_exclude below.
     listing_path: /?s=beyblade&post_type=product
     currency: SEK
     currency_symbol: "kr"
     # Its Store API is 403 (Cloudflare) and the WordPress core API carries no
     # price or stock, so this is parsed from the server-rendered HTML. No
     # browser needed — WooCommerce stamps instock/outofstock on each tile.
-    #
-    # NOTE the listing includes Funko Pop figures ("POP Beyblade X ..."). If
-    # those are not wanted, add:
-    #   title_exclude:
-    #     - "pop "
     title_exclude:
       # This store sells the whole Beyblade back-catalogue and the anime on
       # disc alongside current Beyblade X toys, so the listing needs more
@@ -196,11 +192,11 @@ sites:
     # first_seen date for spotting newcomers) — this only decides what may
     # interrupt you. EMPTY MEANS EVERYTHING.
     #
-    # Matching is a case-insensitive substring. Two traps, both real:
-    #   * names are not word-order stable — the product quoted as "Shark
-    #     Scale" is titled "Scale Shark 4-50UF", so the plain name misses;
-    #   * a term also matches multi-item BUNDLES containing that product.
-    # The product code ("4-50UF", "3-80FB") is the reliable key.
+    # Entries are exact product HANDLES (slugs), not title terms. Title
+    # matching was tried and dropped: names are not word-order stable (the
+    # item quoted as "Shark Scale" is titled "Scale Shark 4-50UF") and a term
+    # also matches bundles merely containing the product. Look a handle up
+    # with: scripts/audit_store.py <store> --find "<term>"
     # A product never seen before alerts ONCE, regardless of the watchlist —
     # you cannot watchlist something that does not exist yet, which is how a
     # four-item bundle was missed. It is recorded on that run, so it is never
