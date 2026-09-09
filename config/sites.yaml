@@ -132,6 +132,39 @@ sites:
       min_delay_seconds: 2.0
       max_delay_seconds: 5.0
 
+  ginza:
+    type: ginza
+    enabled: true
+    # Its search page renders client-side, so this uses the JSON endpoint the
+    # page itself calls. One request covers the whole catalogue.
+    #
+    # SEARCH TERM MATTERS: Ginza lists Takara Tomy names, not Hasbro ones —
+    # Scale Shark 4-50UF is "BEYBLADE Bbx Kobuk Valley". Its titles say "BBX",
+    # never "Beyblade X", so searching for the latter returns nothing. Plain
+    # "beyblade" is the widest net and returns the whole range (22 products).
+    search: beyblade
+    currency: SEK
+    currency_symbol: "kr"
+    # Watchlist entries are Ginza's own numeric product ids, visible in the
+    # product URL: /product/<slug>/<id>/. Nothing here can be shared with
+    # another store's list, because the names do not correspond.
+    watchlist: []
+    alert_on_new_products: true
+    title_exclude:
+      # Same back-catalogue pruning as the other stores. Checked against the
+      # real 22 titles, not guessed.
+      - beyblade burst
+      - switchstrike
+      - metal fusion
+      - metal masters
+      - grevolution
+      - vforce
+      - evolution
+    rate_limit:
+      # A single JSON call per run; no need to hurry it.
+      min_delay_seconds: 1.0
+      max_delay_seconds: 3.0
+
   gameshop:
     type: woocommerce
     enabled: true

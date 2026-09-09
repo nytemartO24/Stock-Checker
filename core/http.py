@@ -109,12 +109,18 @@ class PoliteClient:
     def close(self) -> None:
         self._client.close()
 
-    def get(self, url: str) -> httpx.Response:
-        """GET with pacing and backoff. Raises on a non-2xx that isn't retryable."""
+    def get(self, url: str, headers: dict[str, str] | None = None) -> httpx.Response:
+        """GET with pacing and backoff. Raises on a non-2xx that isn't retryable.
+
+        `headers` merges into the client's own for this request. Ginza's search
+        API needs a Referer matching the search term — without it the endpoint
+        returns an empty body rather than an error, so the need is invisible
+        until you look.
+        """
         delay = max(self.max_delay, 2.0)
         for attempt in range(1, self.max_retries + 1):
             self.pacer.wait()
-            response = self._client.get(url)
+            response = self._client.get(url, headers=headers)
             if response.status_code not in BACKOFF_STATUSES:
                 response.raise_for_status()
                 return response
@@ -136,5 +142,5 @@ class PoliteClient:
 
         raise RateLimited(f"{url} still returning {response.status_code} after {self.max_retries} attempts")
 
-    def get_json(self, url: str) -> Any:
-        return self.get(url).json()
+    def get_json(self, url: str, headers: dict[str, str] | None = None) -> Any:
+        return self.get(url, headers=headers).json()

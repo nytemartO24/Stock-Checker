@@ -102,7 +102,7 @@ section once the real structure diverges intentionally.)
 ## Conventions
 
 - Python 3.11+, type hints on all function signatures.
-- Three transports, all first-class, chosen per site:
+- Four transports, all first-class, chosen per site, cheapest first:
   - **JSON API** (`httpx`, sync) wherever a site exposes one — always
     prefer it. Shopify stores do: `/products.json?limit=250` returns
     `available`, `price` and `compare_at_price` per variant, so there is
@@ -113,6 +113,11 @@ section once the real structure diverges intentionally.)
     no price or stock, but each product tile in the listing HTML is stamped
     `instock`/`outofstock` by the shop itself — as good a signal as Shopify's
     `available`, and no browser required.
+  - **A site's own JSON endpoint**, when the page renders client-side and
+    watching the network finds one. ginza.se's search ships 413KB of HTML with
+    zero product links; `/api/Apptus/Search` returns the whole catalogue in a
+    single call. Check for this BEFORE reaching for a browser — the difference
+    is one request versus one page-load per product.
   - **Browser** (Playwright) only where the data is injected client-side.
     Amazon is confirmed to need it: delivery, seller and price blocks all
     arrive after `domcontentloaded`. This is the expensive one — reach for it
@@ -371,6 +376,33 @@ redone, and so nothing here gets "simplified" back out.
   window. `DeliveryState` stores `date_iso`/`alerted_iso` and compares those.
   An entry without them (written by an older version) re-anchors quietly
   rather than firing.
+
+### The cross-site naming problem (unsolved)
+
+**The same product has a different NAME at every retailer**, and not as a
+word-order variation — a genuinely different name. Scale Shark 4-50UF is:
+
+| store | title |
+|---|---|
+| popsplanet | Beyblade X - Booster: Scale Shark 4-50UF |
+| toysnowman | Beyblade X Scale Shark 4-50UF UX Booster Pack |
+| gameshop | Beyblade X Scale Shark 4-50Uf (Attack) |
+| **ginza** | **BEYBLADE Bbx Kobuk Valley** |
+
+Ginza uses Takara Tomy naming; the others use Hasbro's. Its titles say "BBX",
+never "Beyblade X", so a search for the latter returns nothing there. This is
+why every watchlist is per-store and made of that store's own exact
+identifier (Shopify handle, WooCommerce slug, Ginza numeric id) — a shared
+list is not merely inconvenient, it is impossible.
+
+**What would actually solve it: EAN/GTIN.** Ginza's product pages carry one
+(`5010996385222` on the Kobuk Valley page) — the manufacturer's barcode,
+identical at every retailer on earth. Shopify's public products.json exposes
+`sku` but not `barcode`; WooCommerce listings expose neither, though product
+pages often do. So a cross-store identity map is possible but costs one
+product-page fetch per item per store, and has not been built. This is the
+open route to "am I missing stock purely because of naming", and the thing to
+design before the watchlists grow.
 
 ### Adding a store
 

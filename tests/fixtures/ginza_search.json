@@ -1,0 +1,41 @@
+{
+  "totalCount": 4,
+  "Products": [
+    {
+      "ProductIdentifier": "953114",
+      "ProductTitle": "BEYBLADE BBX Courage Dran S",
+      "ProductUrl": "/product/beyblade-bbx-courage-dran-s/953114/",
+      "ProductPrice": "<div class=\"price\"><strong>169 kr</strong></div>",
+      "BuyButtonHtml": "<span data-product=\"953114\" class=\"prod_953114  btn-watchlist btn-watchlist-add button btn\" title=\"Du får ett mail när produkten går att köpa\" >Bevaka</span>",
+      "ProductDelivery": "Osäker leveranstid",
+      "ProductStockStatus": ""
+    },
+    {
+      "ProductIdentifier": "952826",
+      "ProductTitle": "BEYBLADE BBX Rock Golem",
+      "ProductUrl": "/product/beyblade-bbx-rock-golem/952826/",
+      "ProductPrice": "<div class=\"price\"><strong>169 kr</strong></div>",
+      "BuyButtonHtml": "<a class=\"btn-disabled button\" onclick=\"javascript:return false;\" >Slutsåld</a>",
+      "ProductDelivery": "",
+      "ProductStockStatus": "Utgått ur sortimentet"
+    },
+    {
+      "ProductIdentifier": "952607",
+      "ProductTitle": "BEYBLADE Bbx Gateway Arch",
+      "ProductUrl": "/product/beyblade-bbx-gateway-arch/952607/",
+      "ProductPrice": "<div class=\"price\"><strong>169 kr</strong></div>",
+      "BuyButtonHtml": "<span class=\"button prod_952607 btn-add-to-cart\" data-product=\"952607 169 kr Oy9zZWFyY2gtcGFnZS9zZWFyY2gtaGl0cy13aXRoLWNvdW50L3NlYXJjaC1oaXRzOyM7cHJvZHVjdF9rZXk7OTUyNjA3OyM7T0JKRUNUSVZFJDtOT05FOk5PTkU7MjA7 \">Lägg i kundkorg</span>",
+      "ProductDelivery": "Leveranstid: från 5 vardagar",
+      "ProductStockStatus": "Beställningsvara"
+    },
+    {
+      "ProductIdentifier": "1122309",
+      "ProductTitle": "BEYBLADE BBX Launcher and Top Dlx Soar Phoenix",
+      "ProductUrl": "/product/beyblade-bbx-launcher-and-top-dlx-soar-phoenix/1122309/",
+      "ProductPrice": "<div class=\"price\"><strong>329 kr</strong></div>",
+      "BuyButtonHtml": "<span data-product=\"1122309\" class=\"prod_1122309  btn-watchlist btn-watchlist-add button btn\" title=\"Du får ett mail när produkten går att köpa\" >Bevaka</span>",
+      "ProductDelivery": "Osäker leveranstid",
+      "ProductStockStatus": ""
+    }
+  ]
+}
