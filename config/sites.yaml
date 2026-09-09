@@ -155,6 +155,11 @@ sites:
       # inventory; every term was checked against the real titles rather than
       # guessed.
       - beyblade burst    # 22 — different product line (same call as toysnowman)
+      # A Burst sub-line whose titles never say "Burst", so the term above
+      # cannot catch it — and because they say "Starter Pack" they landed in
+      # that tier. Evidence that an exclusion list needs periodic review as a
+      # store adds back-catalogue, not just one pass.
+      - switchstrike      # 6  — older Burst sub-line
       - let it rip        # 5  — anime on DVD
       - metal masters     # 5  — older toy line
       - metal fusion      # 4  — older toy line
