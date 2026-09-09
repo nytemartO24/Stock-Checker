@@ -136,12 +136,45 @@ MARKETPLACES = re.compile(
     r"(amazon\.|ebay\.|aliexpress|alibaba|etsy|walmart|target\.com|fruugo"
     r"|cdiscount|allegro|bol\.com|rakuten|wish\.com|temu|shein|catch\.com)", re.I)
 
-# Swedish-facing shops that do not live on a .se domain. Grouping by TLD alone
-# would file coolshop.se's sibling coolshop.com and boozt.com as "worldwide",
-# which is wrong in the only way that matters: they deliver here in SEK.
+# GEOGRAPHY IS A REQUIREMENT, NOT A GROUPING. The order below is delivered
+# cost to Sweden, and it decides what is worth reading at all: a US shop's
+# freight and customs turn a cheap top into an expensive one, so finding one is
+# not a result. Ranked buckets rather than a boolean, because "cheap enough" is
+# a gradient — a German shop beats a Portuguese one on freight alone.
+REGION_TLDS: dict[str, tuple[str, ...]] = {
+    "se": (".se",),
+    # Neighbours: cheap freight, often the same carriers.
+    "nordic": (".dk", ".fi", ".no", ".ee", ".lv", ".lt"),
+    # Large, wealthy, well-connected EU. The priority target — and the gap this
+    # tool had, because nothing ever asked for a German shop by name.
+    "eu-core": (".de", ".nl", ".be", ".at", ".lu", ".fr"),
+    # EU, so no customs, but further and slower.
+    "eu-other": (".it", ".es", ".pl", ".cz", ".ie", ".pt", ".sk", ".si",
+                 ".hu", ".gr", ".ro", ".bg", ".hr", ".mt", ".cy"),
+}
+
+# Outside the EU: customs, import VAT and freight all count against these. The
+# UK is here deliberately — post-Brexit it is a third country like any other.
+SKIP_TLDS = (".uk", ".co.uk", ".us", ".jp", ".co.jp", ".au", ".com.au", ".ca",
+             ".cn", ".ru", ".tr", ".ae", ".in", ".br", ".mx", ".za", ".sg")
+SKIP_DOMAINS = re.compile(
+    r"(walmart|target\.com|bigbadtoystore|entertainmentearth|beywarehouse"
+    r"|beysandbricks|beyblade-toys|troveofcollectibles|raptorgames|hlj\.com"
+    r"|amiami|plazajapan|solarisjapan|nin-nin-game|zavvi|magicmadhouse"
+    r"|thetoyshop|smythstoys|rarewaves|staractionfigures|eclipse-gaming"
+    r"|hotukdeals|shop\.beyblade|takaratomy|otakume)", re.I)
+
+# Swedish-facing shops that do not live on a .se domain. TLD alone would file
+# coolshop.se's sibling coolshop.com and boozt.com as foreign, which is wrong
+# in the only way that matters: they deliver here in SEK.
 SE_FACING = re.compile(
     r"(boozt|coolshop|lekmer|jollyroom|cdon|webhallen|inet\.se|elgiganten"
     r"|power\.se|netonnet|adlibris|bokus|amazon\.se|apotea|babyland)", re.I)
+
+# Where a .com/.eu/.net shop actually trades cannot be read off the domain, so
+# these are neither promoted nor discarded — they are reported as needing a
+# look. A rule that guessed would have thrown away probems.be.
+REGION_ORDER = ("se", "nordic", "eu-core", "eu-other", "unknown", "skip")
 
 # Multi-label public suffixes we actually meet. A full PSL is a dependency for
 # no gain at this scale, but naive last-two-labels turns co.uk into "co.uk".
@@ -218,6 +251,34 @@ REDIRECT = re.compile(r"(uddg=|/ck/a[?])", re.I)
 # the same thing for this as for "beyblade" is not searching.
 CONTROL_TERM = "qzzxwvk"
 
+# OpenStreetMap, queried through Overpass, is the store DATABASE this project
+# was missing. Every mapped toy/game/hobby shop carrying a `website` tag, per
+# country, free and with no key or bot wall — measured 2026-09-09: 609 distinct
+# sites in one DE/AT/NL/CZ box, none of which any search engine had surfaced.
+#
+# Why it beats the alternatives, all of which were tried:
+#   * Price aggregators (idealo.de, geizhals.de, prisjakt, pricespy,
+#     ledenicheur) have HIGHER yield per request — a product page lists every
+#     retailer with an offer — but all answer 403 to plain HTTP from BOTH the
+#     dev machine and the VPS. They are DataDome/Cloudflare walls, not IP
+#     reputation, so they need the browser transport.
+#   * Search engines cannot be steered by country at all: Bing silently ignores
+#     a bare-TLD `site:.de`, returning the identical result set.
+# The trade is precision: OSM lists SHOPS, not stockists, so its output is
+# input to `probe` rather than an answer.
+OVERPASS_HOSTS = (
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+)
+
+# Retail categories that plausibly stock a Beyblade. `department_store` is
+# deliberately absent: it adds supermarket chains by the hundred and almost
+# none of them run a webshop that lists individual toys.
+OSM_SHOP_TYPES = "toys|games|hobby|model|video_games"
+
+# ISO country codes worth harvesting, in the shipping order of REGION_TLDS.
+DEFAULT_COUNTRIES = ("DE", "NL", "BE", "AT", "DK", "FI", "FR")
+
 # Politeness cap per shop. Nine search paths plus a control each would be 18
 # requests at one shop to answer one question, which is not a reasonable thing
 # to do to a small retailer.
@@ -263,9 +324,16 @@ class Candidate:
 
     @property
     def region(self) -> str:
-        if self.domain.endswith(".se") or SE_FACING.search(self.domain):
+        """Which shipping bucket this domain falls in. See REGION_TLDS."""
+        domain = self.domain.lower()
+        if domain.endswith(".se") or SE_FACING.search(domain):
             return "se"
-        return "world"
+        if SKIP_DOMAINS.search(domain) or domain.endswith(SKIP_TLDS):
+            return "skip"
+        for region, suffixes in REGION_TLDS.items():
+            if domain.endswith(suffixes):
+                return region
+        return "unknown"
 
 
 class HostPool:
@@ -296,6 +364,19 @@ class HostPool:
         except Exception as e:  # noqa: BLE001 — every failure is data here
             detail = getattr(getattr(e, "response", None), "status_code", None)
             return "", f"{type(e).__name__}{f' {detail}' if detail else ''}: {e}"[:160]
+
+    def post(self, url: str, data: dict[str, str]) -> tuple[str, str | None]:
+        """Form POST. Overpass only accepts the query as a POST body."""
+        host = urlparse(url).netloc.lower()
+        client = self._clients.get(host)
+        if client is None:
+            client = PoliteClient(min_delay=self._min, max_delay=self._max,
+                                  timeout=180.0, max_retries=1)
+            self._clients[host] = client
+        try:
+            return client.post_form(url, data).text, None
+        except Exception as e:  # noqa: BLE001
+            return "", f"{type(e).__name__}: {e}"[:160]
 
     def close(self) -> None:
         for client in self._clients.values():
@@ -385,7 +466,8 @@ def add(found: dict[str, Candidate], url: str, source: str) -> None:
 # Mode 1: engine search
 # ---------------------------------------------------------------------------
 
-def queries(eans: list[str], terms: list[str]) -> list[str]:
+def queries(eans: list[str], terms: list[str],
+            tlds: list[str] | None = None) -> list[str]:
     """Query variants, widest signal first.
 
     A bare barcode is the strongest possible signal (it can only mean this
@@ -397,6 +479,16 @@ def queries(eans: list[str], terms: list[str]) -> list[str]:
     out = [f'"{ean}"' for ean in eans]
     out += [f'{ean} beyblade' for ean in eans]
     out += terms
+    # `site:.de <name>` is the entire fix for "we found no German store".
+    # Nothing in an unrestricted query makes an engine prefer a German shop
+    # over a US one, and the US one usually outranks it — so ASK. Applied to
+    # the NAME variants and NOT the barcode: a shop that never publishes a
+    # barcode still stocks the product, and restricting by country and barcode
+    # at once returns nothing at all.
+    for tld in tlds or []:
+        suffix = tld if tld.startswith(".") else f".{tld}"
+        for term in terms:
+            out.append(f"site:{suffix} {term}")
     seen, unique = set(), []
     for q in out:
         if q and q not in seen:
@@ -406,10 +498,11 @@ def queries(eans: list[str], terms: list[str]) -> list[str]:
 
 
 def run_search(pool: HostPool, eans: list[str], terms: list[str],
-               regions: list[str]) -> tuple[dict[str, Candidate], list[str]]:
+               regions: list[str],
+               tlds: list[str] | None = None) -> tuple[dict[str, Candidate], list[str]]:
     found: dict[str, Candidate] = {}
     log: list[str] = []
-    for query in queries(eans, terms):
+    for query in queries(eans, terms, tlds):
         for name, engine in ENGINES.items():
             for region in regions:
                 token = engine["regions"].get(region)
@@ -656,6 +749,55 @@ def verify_url(pool: HostPool, url: str, eans: list[str]) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Mode 4: harvest a shop directory from OpenStreetMap
+# ---------------------------------------------------------------------------
+
+def overpass(pool: HostPool, country: str) -> tuple[list[str], str | None]:
+    """Every mapped shop website in one country. Returns (urls, error).
+
+    Queried per country rather than by bounding box so the answer means
+    something exact: a box around Germany also collects Swiss and Czech shops,
+    and those belong in different shipping buckets. `nwr` covers nodes, ways
+    and relations — a mapped shop can be any of the three, and asking only for
+    nodes silently loses the ones mapped as buildings.
+    """
+    query = (
+        f'[out:json][timeout:180];'
+        f'area["ISO3166-1"="{country}"][admin_level=2]->.a;'
+        f'nwr["shop"~"^({OSM_SHOP_TYPES})$"]["website"](area.a);'
+        f'out tags;'
+    )
+    for host in OVERPASS_HOSTS:
+        body, error = pool.post(host, {"data": query})
+        if error:
+            continue
+        try:
+            elements = json.loads(body)["elements"]
+        except Exception as e:  # noqa: BLE001
+            error = f"unparseable Overpass reply: {type(e).__name__}"
+            continue
+        return [e.get("tags", {}).get("website", "") for e in elements], None
+    return [], error or "all Overpass hosts failed"
+
+
+def run_directory(pool: HostPool, countries: list[str]) -> dict[str, Candidate]:
+    found: dict[str, Candidate] = {}
+    for country in countries:
+        urls, error = overpass(pool, country)
+        if error:
+            print(f"  {country}: FAILED {error}")
+            continue
+        before = len(found)
+        for url in urls:
+            target = usable(url if "//" in url else f"https://{url}")
+            if target:
+                add(found, target, f"osm/{country}")
+        print(f"  {country}: {len(urls)} mapped shop(s) with a website, "
+              f"{len(found) - before} new domain(s)")
+    return found
+
+
+# ---------------------------------------------------------------------------
 # Reporting
 # ---------------------------------------------------------------------------
 
@@ -693,8 +835,18 @@ def confirm(pool: HostPool, found: dict[str, Candidate], eans: list[str],
 def report_search(found: dict[str, Candidate], log: list[str]) -> str:
     lines = ["# Store discovery — engine search", "", "## Engine yield", ""]
     lines += [f"    {entry}" for entry in log]
+    skipped = sorted(c.domain for c in found.values() if c.region == "skip")
+    if skipped:
+        lines += ["", f"## Outside the EU — not worth the freight ({len(skipped)})", "",
+                  "    " + ", ".join(skipped)]
+    labels = {"se": "Sweden", "nordic": "Nordic neighbours",
+              "eu-core": "EU core (DE/NL/BE/AT/LU/FR) — the target",
+              "eu-other": "EU, further out", "unknown": "Region unknown — check these"}
     for kind in ("shop", "marketplace", "aggregator"):
-        for region, label in (("se", "Sweden-facing"), ("world", "Worldwide")):
+        for region in REGION_ORDER:
+            label = labels.get(region)
+            if label is None:
+                continue
             group = sorted((c for c in found.values()
                             if c.kind == kind and c.region == region),
                            key=lambda c: c.domain)
@@ -721,11 +873,18 @@ def report_search(found: dict[str, Candidate], log: list[str]) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("mode", choices=["search", "probe", "verify"])
+    parser.add_argument("mode", choices=["search", "probe", "verify", "directory"])
     parser.add_argument("--ean", action="append", default=[],
                         help="barcode to search for (repeatable)")
     parser.add_argument("--term", action="append", default=[],
                         help="product/brand text to search for (repeatable)")
+    parser.add_argument("--countries", default=",".join(DEFAULT_COUNTRIES),
+                        help="directory mode: ISO country codes to harvest from OpenStreetMap")
+    parser.add_argument("--out-domains",
+                        help="directory mode: write the domains here, ready for `probe`")
+    parser.add_argument("--tld",
+                        help="comma-separated TLDs to restrict NAME queries to, e.g. "
+                             "de,nl,fr,at,dk. The fix for finding no German shop.")
     parser.add_argument("--regions", default="se,world,de,uk",
                         help="engine region tokens to try (default se,world,de,uk)")
     parser.add_argument("--domains", help="probe: file of domains, one per line")
@@ -754,7 +913,8 @@ def main(argv: list[str] | None = None) -> int:
             if not args.ean and not args.term:
                 parser.error("search needs at least one --ean or --term")
             found, log = run_search(pool, args.ean, args.term,
-                                    [r.strip() for r in args.regions.split(",") if r.strip()])
+                                    [r.strip() for r in args.regions.split(",") if r.strip()],
+                                    [t.strip() for t in (args.tld or "").split(",") if t.strip()])
             if args.verify_found:
                 # Shops answer at shop pace, not engine pace — the slow
                 # ENGINE_DELAY is for engines only.
@@ -798,6 +958,34 @@ def main(argv: list[str] | None = None) -> int:
             usable_count = sum(r["verdict"].startswith("REAL") for r in results)
             print(f"\n{usable_count}/{len(results)} shop searches usable")
             payload = results
+
+        elif args.mode == "directory":
+            countries = [c.strip().upper() for c in args.countries.split(",") if c.strip()]
+            found = run_directory(pool, countries)
+            # Ordered by shipping cost, and the out-of-EU bucket is dropped
+            # rather than written: a US toy shop is not a lead here.
+            keep = [c for c in found.values() if c.region != "skip"]
+            print()
+            for region in REGION_ORDER:
+                group = sorted(c.domain for c in keep if c.region == region)
+                if group:
+                    print(f"  {region:<10} {len(group):>4}  {', '.join(group[:6])}"
+                          f"{' ...' if len(group) > 6 else ''}")
+            dropped = len(found) - len(keep)
+            print(f"\n  {len(keep)} in-scope domain(s); {dropped} outside the EU, dropped")
+            if args.out_domains:
+                lines = ["# Harvested from OpenStreetMap via Overpass on "
+                         f"{', '.join(countries)}.",
+                         "# Shops, not confirmed stockists — feed this to `probe`.", ""]
+                for region in REGION_ORDER:
+                    group = sorted(c.domain for c in keep if c.region == region)
+                    if group:
+                        lines += [f"# --- {region} ---"] + group + [""]
+                Path(args.out_domains).write_text("\n".join(lines), encoding="utf-8")
+                print(f"  wrote {args.out_domains}")
+            payload = [{"domain": c.domain, "region": c.region,
+                        "found_by": sorted(c.found_by), "urls": sorted(c.urls)}
+                       for c in sorted(keep, key=lambda c: (c.region, c.domain))]
 
         else:
             if not args.urls:

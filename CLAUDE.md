@@ -469,6 +469,53 @@ actually had to be built.
 `config/candidate_stores.txt` holds the domains to probe, annotated. It is not
 a tracked-store list; `sites.yaml` owns that.
 
+#### Geography is a REQUIREMENT, not a grouping
+
+Only shops that ship to Sweden count, and freight decides the rest: **EU core
+(DE/NL/BE/AT/LU/FR) is the target**, Nordic neighbours are just as good, the
+rest of the EU is fine but slower, and **the US and UK are out** — post-Brexit
+the UK is a third country, so customs and freight erase the saving. `region_of`
+ranks every domain into `se / nordic / eu-core / eu-other / unknown / skip`,
+the report is ordered by that, and `skip` collapses to a one-line count. A
+`.com`/`.eu` shop is `unknown` and reported for checking rather than guessed at
+— guessing would have discarded probems.be.
+
+(rarewaves is the deliberate exception: UK-based, tracked anyway because the
+user found it, the catalogue is unusually complete and it quotes SEK.)
+
+#### Where to find EU shops — what works, measured 2026-09-09
+
+**`directory` mode: OpenStreetMap via Overpass. This is the store database.**
+
+    python scripts/discover_stores.py directory --countries DE,NL,BE,AT,DK,FI,FR \
+        --out-domains config/candidate_stores_eu.txt
+
+Every mapped `shop=toys|games|hobby|model|video_games` carrying a `website`
+tag, per country. Free, no key, no bot wall, and it surfaced shops no engine
+ever returned — intertoys.nl, top1toys.nl, rofu.de, dreamland.nl,
+spielwaren-kroemer.de, king-jouet.com. Its output is SHOPS, not stockists, so
+it feeds `probe`; that is the division of labour, not a shortcoming.
+
+**Do not bother with these, and here is why:**
+
+- **`site:` operators.** Bing SILENTLY IGNORES a bare-TLD `site:.de`, returning
+  the byte-identical result set with zero new domains. This is why the earlier
+  searches found no German shop: nothing ever actually asked for one, and the
+  request that looked like asking was discarded server-side. `--tld` exists and
+  is kept only because it is honest about yielding nothing on Bing.
+- **Price aggregators** — idealo.de, geizhals.de, prisjakt.nu, pricespy,
+  ledenicheur.fr. These have the HIGHEST yield of anything available (one
+  product page lists every retailer with an offer, which is exactly the
+  question we are asking) but ALL answer **403 to plain HTTP from both the dev
+  machine and the VPS**. It is DataDome/Cloudflare, not IP reputation, so the
+  VPS trick does not help. **They are the best remaining lead and they need the
+  browser transport** — Playwright is already installed for Amazon. This is the
+  highest-value unbuilt thing in the project.
+  (billiger.de and beslist.nl answer 200 and are worth parsing without a
+  browser.)
+- **Engine region tokens** (`cc=SE`, `kl=se-sv`) shift ranking slightly and do
+  not restrict by country.
+
 **Found 2026-09-09 that the web search had missed entirely:**
 
 | store | why it matters |

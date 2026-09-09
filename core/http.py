@@ -145,6 +145,19 @@ class PoliteClient:
     def get_json(self, url: str, headers: dict[str, str] | None = None) -> Any:
         return self.get(url, headers=headers).json()
 
+    def post_form(self, url: str, data: dict[str, str],
+                  headers: dict[str, str] | None = None) -> httpx.Response:
+        """Form-encoded POST, paced like every other request.
+
+        Added for the OpenStreetMap Overpass API, which takes its query only as
+        a POST body. Kept separate from post_json rather than generalised: two
+        callers, two body encodings, and no third in sight.
+        """
+        self.pacer.wait()
+        response = self._client.post(url, data=data, headers=headers)
+        response.raise_for_status()
+        return response
+
     def post_json(self, url: str, json: Any,
                   headers: dict[str, str] | None = None) -> Any:
         """POST a JSON body, with the same pacing and backoff as `get`.
