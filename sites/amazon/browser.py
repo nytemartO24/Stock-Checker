@@ -161,6 +161,68 @@ def _select_country(page, market: str, country: str) -> bool:
     return True
 
 
+MODAL_CONTROLS = "#GLUXCountryList, [id^='GLUXZipUpdateInput']"
+POPOVER = ".a-popover-inner"
+
+
+def _open_location_modal(page, market: str, attempts: int = 3) -> bool:
+    """Click the location opener until the modal is actually there.
+
+    MEASURED, not guessed — and the measurement overturned the obvious theory.
+    Roughly 1 run in 8 failed to pin a location, logging "modal did not fill in
+    within 8s", which reads like the contents rendering too slowly. They do not:
+    instrumenting the real code path on the VPS showed the controls present at
+    **1000ms** whenever the modal opens, and byte-identical at 15s. A longer
+    wait would have changed nothing.
+
+    What actually happens is that `.a-popover-inner` count stays at ZERO — the
+    modal never opens. The opener exists, the click raises nothing, there is no
+    captcha and the page is normal; the click simply lands before Amazon's
+    handler is bound. Over 14 production-equivalent runs: 13 opened on the first
+    click, and the one that did not RECOVERED when the page was allowed to settle
+    and the opener clicked again.
+
+    So the fix is to verify and re-click, not to wait longer. Waiting for
+    `networkidle` before retrying is what the successful recovery did, so it is
+    kept rather than trimmed.
+    """
+    opener = page.locator(GLOW_OPENER_SELECTOR)
+    for attempt in range(1, attempts + 1):
+        try:
+            opener.first.click(timeout=5000)
+        except Exception as e:
+            logger.warning("[%s]   location opener click failed (%d/%d): %s",
+                           market, attempt, attempts, type(e).__name__)
+        try:
+            # Short, because when it opens at all it is populated in ~1s.
+            # A long timeout here only delays the retry that actually helps.
+            page.wait_for_selector(MODAL_CONTROLS, timeout=3000)
+            page.wait_for_timeout(400)
+            return True
+        except PlaywrightTimeoutError:
+            pass
+
+        opened = 0
+        try:
+            opened = page.locator(POPOVER).count()
+        except Exception:
+            pass
+        # Distinguish the two failures rather than logging one message for both:
+        # a popover with no controls would be a markup change on Amazon's side,
+        # while no popover at all is the click-too-early case this loop fixes.
+        logger.warning("[%s]   location modal not usable (attempt %d/%d): "
+                       "%s — retrying", market, attempt, attempts,
+                       "popover open but no postcode/country control" if opened
+                       else "popover did not open at all")
+        if attempt < attempts:
+            try:
+                page.wait_for_load_state("networkidle", timeout=8000)
+            except Exception:
+                page.wait_for_timeout(1500)
+    logger.warning("[%s] location modal never opened after %d clicks", market, attempts)
+    return False
+
+
 def set_delivery_location(page, market: str, config: dict, country: str, postcode: str) -> str:
     """Pin the destination. Never raises; returns whatever the widget says.
 
@@ -175,16 +237,8 @@ def set_delivery_location(page, market: str, config: dict, country: str, postcod
         if opener.count() == 0:
             logger.warning("[%s] no location picker on this page", market)
             return read_delivery_location(page)
-        opener.first.click(timeout=5000)
-        # Wait for the modal's CONTENTS, not a fixed guess. de and es each
-        # failed once overnight with "no country picker (#GLUXCountryList)" —
-        # the modal had opened but had not filled in yet, and 1500ms happened
-        # not to be enough that time.
-        try:
-            page.wait_for_selector("#GLUXCountryList, [id^='GLUXZipUpdateInput']", timeout=8000)
-        except PlaywrightTimeoutError:
-            logger.warning("[%s]   location modal did not fill in within 8s", market)
-        page.wait_for_timeout(500)
+        if not _open_location_modal(page, market):
+            return read_delivery_location(page)
 
         if domestic:
             if not _fill_postcode(page, market, postcode):

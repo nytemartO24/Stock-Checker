@@ -145,6 +145,57 @@ class BrowserFetcher:
                 except Exception:
                     pass
 
+    def fetch_pages(self, url: str, next_selector: str, *,
+                    max_pages: int = 20, settle_ms: int = CHALLENGE_WAIT_MS,
+                    ) -> tuple[list[str], str | None]:
+        """HTML for each page of a paginated view, following `next_selector`.
+
+        NECESSARY, NOT A CONVENIENCE: idealo's category listing is a single-page
+        application. Its pager adds NO query parameter — `pageIndex`, `p`,
+        `pageNumber`, `offset` and `resultsPerPage` are all silently ignored and
+        return the byte-identical first page — so the only way to reach page 2
+        is to click. A 16-page listing read as one page is an 94% loss reported
+        as a complete answer, which is exactly the failure mode this project
+        keeps meeting.
+
+        Stops when the next control is gone, or when a page yields nothing new —
+        the caller decides what "new" means, so this returns raw HTML per page
+        and simply refuses to loop past `max_pages`.
+        """
+        if self._context is None:
+            return [], "browser not started"
+        self._pacer(url).wait()
+        page = None
+        pages: list[str] = []
+        try:
+            page = self._context.new_page()
+            page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            self._dismiss_consent(page)
+            page.wait_for_timeout(settle_ms)
+            for _ in range(max_pages):
+                pages.append(page.content())
+                control = page.locator(next_selector).first
+                try:
+                    if not control.count() or not control.is_visible(timeout=1500):
+                        break
+                    control.scroll_into_view_if_needed(timeout=3000)
+                    control.click(timeout=5000)
+                except Exception:
+                    break
+                # Pace between pages: clicking through a listing is still a
+                # sequence of requests to the site.
+                self._pacer(url).wait()
+                page.wait_for_timeout(settle_ms)
+            return pages, None
+        except Exception as e:  # noqa: BLE001
+            return pages, f"{type(e).__name__}: {e}"[:160]
+        finally:
+            if page is not None:
+                try:
+                    page.close()
+                except Exception:
+                    pass
+
     def _dismiss_consent(self, page) -> None:
         """Click a cookie wall if one is in the way.
 
