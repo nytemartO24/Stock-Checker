@@ -487,7 +487,17 @@ map keyed on a single barcode silently splits the product in two, and any
 lookup must carry a SET of codes per product. This is the same class of error
 as assuming one name, one tier down.
 
-14 of 48 candidate shop searches are usable over plain HTTP. Most Swedish
+**Run discovery ON THE VPS.** Measured 2026-09-09 by running the identical
+probe from both: the VPS gets **17/48** usable shop searches against the dev
+machine's 14/48. beysandbricks.com, shopforgeek.com, plazajapan.com and
+blackfire.eu all answer 403 to the home connection and 200 to the VPS — a
+residential IP is not the safer choice here, it is the more blocked one.
+(babyland.se went the other way, on a single marginal link.) The one thing the
+VPS is worse at is `search`: Bing pads a datacenter IP's results with Czech
+legal databases and industrial filter vendors, which is what `--verify-found`
+is for. DDG-lite, conversely, blocks the dev machine and answers the VPS.
+
+17 of 48 candidate shop searches are usable over plain HTTP. Most Swedish
 chains (lekia, cdon, coolshop, adlibris, jollyroom, boozt, teknikproffset,
 lekmer, fyndiq) render search **client-side** — they need Ginza's treatment
 (find the JSON endpoint the page calls) or a browser, and are listed as such
