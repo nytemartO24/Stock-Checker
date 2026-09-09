@@ -176,7 +176,15 @@ def set_delivery_location(page, market: str, config: dict, country: str, postcod
             logger.warning("[%s] no location picker on this page", market)
             return read_delivery_location(page)
         opener.first.click(timeout=5000)
-        page.wait_for_timeout(1500)
+        # Wait for the modal's CONTENTS, not a fixed guess. de and es each
+        # failed once overnight with "no country picker (#GLUXCountryList)" —
+        # the modal had opened but had not filled in yet, and 1500ms happened
+        # not to be enough that time.
+        try:
+            page.wait_for_selector("#GLUXCountryList, [id^='GLUXZipUpdateInput']", timeout=8000)
+        except PlaywrightTimeoutError:
+            logger.warning("[%s]   location modal did not fill in within 8s", market)
+        page.wait_for_timeout(500)
 
         if domestic:
             if not _fill_postcode(page, market, postcode):
@@ -219,7 +227,8 @@ def open_market(playwright, market: str, config: dict, *, country: str, postcode
     comparable to the other markets and shouldn't be pruned against.
     """
     browser = playwright.chromium.launch(headless=headless)
-    page = browser.new_context(user_agent=USER_AGENT, locale=f"en-{market.upper()}").new_page()
+    context = browser.new_context(user_agent=USER_AGENT, locale=f"en-{market.upper()}")
+    page = context.new_page()
 
     warmup_url = f"https://www.{config['domain']}/-/en/"
     location = ""
@@ -241,16 +250,28 @@ def open_market(playwright, market: str, config: dict, *, country: str, postcode
         # exist yet. Pinning then fails with "no location picker", and the
         # interstitial gets dismissed seconds later by the first product's
         # navigation — too late to matter.
-        for attempt in range(1, 3):
+        # Overnight this failed on .se in 6 of 36 runs, always the same way:
+        # Amazon's spurious "Download is starting" aborts the navigation and
+        # leaves the page at chrome-error://chromewebdata/. safe_goto tolerates
+        # the exception, but re-navigating THAT page lands on chrome-error
+        # again — so the original retry, which only repeated the goto, could
+        # never recover. Replacing the page escapes the broken state; keeping
+        # the same context keeps the cookies, which is the whole point of
+        # having warmed up.
+        attempts = 3
+        for attempt in range(1, attempts + 1):
             safe_goto(page, warmup_url, market)
             try:
                 page.wait_for_selector(GLOW_OPENER_SELECTOR, timeout=8000)
                 break
             except PlaywrightTimeoutError:
                 logger.warning(
-                    "[%s] warm-up landed on %r with no location picker — retrying (%d/2)",
-                    market, page.url, attempt,
+                    "[%s] warm-up landed on %r with no location picker — retrying (%d/%d)",
+                    market, page.url, attempt, attempts,
                 )
+                if attempt < attempts:
+                    page.close()
+                    page = context.new_page()
         else:
             logger.warning(
                 "[%s] no location picker after 2 warm-up attempts; the destination "

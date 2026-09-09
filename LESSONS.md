@@ -74,3 +74,13 @@ CLAUDE.md and trim this file.
   dropped 0 of 60 products. Every scripted edit gets
   `assert s.count(old) == 1` before the replace; a silent no-op that still
   prints "done" is worse than a crash.
+
+- 2026-09-09: The .se warm-up retry I added could never have worked. Amazon's
+  spurious download prompt leaves the page at `chrome-error://chromewebdata/`,
+  and my "fix" retried by re-navigating THAT page, which lands on chrome-error
+  again — 6 of 36 overnight runs failed identically, all three attempts. A
+  retry has to change something: replacing the page (keeping the context, so
+  the warmed-up cookies survive) escapes the broken state, re-issuing the same
+  call on the same object cannot. Also: the failure was only visible because
+  the unpinned-location guard logs loudly and marks the run incomplete —
+  without it, .se would have been quietly reporting a German destination.
