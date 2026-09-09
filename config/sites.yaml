@@ -153,9 +153,20 @@ sites:
     #   title_exclude:
     #     - "pop "
     title_exclude:
-      # Same call already made for toysnowman: Burst is a genuinely different
-      # product line. This store mixes it into the same listing.
-      - beyblade burst
+      # This store sells the whole Beyblade back-catalogue and the anime on
+      # disc alongside current Beyblade X toys, so the listing needs more
+      # pruning than the Shopify stores. Counts are from the 2026-09-09
+      # inventory; every term was checked against the real titles rather than
+      # guessed.
+      - beyblade burst    # 22 — different product line (same call as toysnowman)
+      - let it rip        # 5  — anime on DVD
+      - metal masters     # 5  — older toy line
+      - metal fusion      # 4  — older toy line
+      - "pop "            # 4  — Funko Pop figures, not toys
+      - evolution         # 4  — anime DVDs and "Evolution Toy Bundle Pack"
+      - grevolution       # 2  — anime DVD
+      - vforce            # 2  — anime DVD
+      - backpack          # 1  — merchandise
     watchlist:
       - beyblade-x-scale-shark-4-50uf-attack                            # Scale Shark 4-50UF
       - beyblade-x-sterling-wolf-3-80-fb-ux-starter-pack                # Sterling Wolf 3-80FB
