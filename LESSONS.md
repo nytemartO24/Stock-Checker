@@ -120,4 +120,5 @@ CLAUDE.md and trim this file.
 - Counting anchors is not counting products: idealo's search-suggest dropdown contains product links, which inflated every tile count in the session and produced market-coverage figures that had to be retracted. Anchor a count to the real tile element.
 - `fetch()` cannot set a `Referer` — browsers forbid the header — so a "does it need a Referer?" test done that way proves nothing. Use the request context (`page.request`) or a real navigation.
 - Running `main.py` by hand skips `deploy/run.sh`, which is what sources `.env`, so alerts log "DISCORD_WEBHOOK_URL not set" and go nowhere. run.sh's own comment says this. Undelivered alerts correctly did NOT advance state, so nothing was lost.
+- Claimed "Amazon has no new-product discovery" when the user had just received an Amazon new-product ping. It was true of THIS project and false of their setup: news-notifier's scrape_catalog_multi.py does it and still runs at :10/:40. The tell was in the message — the alert came from NotifierMan in a different format from ours — and checking which system sent a ping takes one grep. Scope a claim to the component you actually verified.
 

@@ -707,6 +707,31 @@ New products need no special handling for alerting: an unseen handle has no
 stored state, so a watchlisted one alerts the first time it appears in
 stock.
 
+### Amazon new-product discovery lives in news-notifier, NOT here
+
+**Do not "add" it and do not assume it is missing.** This project's Amazon module
+visits exactly the watchlisted ASINs, so it cannot see a product it was never
+told about. Discovery is already covered by the pilot's
+`pilot/eu_multimarket/scrape_catalog_multi.py`, still on cron at **:10/:40**
+(this project runs at :15/:45). Confirmed working 2026-09-09T19:40: it found
+`B0H1RB48HK` as "1 new of 48" on amazon.se and alerted, which is how the user
+learned about Seize Jaguar — listed there as "Hasbro BEY BBX Browns Canyon".
+
+Its mechanism, worth keeping if it is ever ported:
+`/s?k=beyblade+x&rh=p_123%3A219753&s=date-desc-rank&dc&language=en` — the search
+filtered to the **Hasbro brand** and sorted **newest first**, per market, reading
+`div[data-component-type="s-search-result"][data-asin]` tiles (43-48 products per
+market). Zero results is treated as an error, never as "nothing new".
+
+**THE RISK THIS CREATES:** the long-term plan is for Stock Checker to replace the
+pilot. Retiring news-notifier without porting this would silently remove Amazon
+new-product discovery — nothing here would report its absence, and the failure
+mode is "we never hear about a new Beyblade again", which looks exactly like a
+quiet week. Port it before retiring that cron job.
+
+(An earlier session in this file stated that Amazon has no new-product discovery
+at all. That was wrong: it is absent from THIS project, and present on the box.)
+
 ### Delivery dates (Amazon only)
 
 A long estimate is itself a form of unavailability: an add-to-cart button and
