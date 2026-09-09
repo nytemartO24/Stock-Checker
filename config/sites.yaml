@@ -332,6 +332,18 @@ sites:
       - beyblade-x-tread-croc-tq-5-50gn-cx-whip-brachio-ow-5-70nr-cx-nether-incendio-z-ux-suppress-superion-0-70lp-bx-infinity-starter-pack-bundle
       # This one contains BOTH Delta Unicorn and Glare Cyclops.
       - beyblade-x-delta-unicorn-po-3-60gu-cx-glory-valkerion-lf-ux-seize-jaguar-hn-ux-glare-cyclops-7-55fb-bx-infinity-starter-pack-bundle
+      # SINGLES of three watched products, which appeared here 2026-09-09 21:18
+      # and were caught by the new-product alert. Adding them is the point of
+      # that alert: it fires whatever the stock state, precisely so a product
+      # that shows up out of stock can be watchlisted BEFORE it returns —
+      # without an entry here a restock is silent, because `alertable` gates it.
+      #
+      # Tread Croc and Whip Brachio previously existed here ONLY inside the
+      # four-item bundle above. Tread Croc's single was in stock at 21:18 and
+      # sold out within minutes, which is the whole reason these are watched.
+      - beyblade-x-whip-brachio-ow-5-70nr-cx-infinity-starter-pack     # Whip Brachio OW 5-70NR
+      - beyblade-x-tread-croc-tq-5-50gn-cx-infinity-starter-pack       # Tread Croc TQ 5-50GN
+      - beyblade-x-delta-unicorn-po-3-60gu-cx-infinity-starter-pack    # Delta Unicorn PO 3-60GU
     # This store has ONE beyblade collection, mixing product generations, so
     # an unwanted line can only be dropped by title. EXCLUDE the old
     # generation rather than trying to include the current one by name:
