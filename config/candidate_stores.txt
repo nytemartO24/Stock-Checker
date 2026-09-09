@@ -1,0 +1,65 @@
+# Candidate retailers for `scripts/discover_stores.py probe`.
+#
+# NOT a tracked-store list — config/sites.yaml owns that. These are domains
+# worth ASKING whether they stock Beyblade, via their own site search. A
+# domain here costs a handful of requests once, not per run.
+#
+# Grouped by market because that is the whole point: a Sweden-facing shop is
+# worth more here than a better one that will not ship here affordably.
+# `#` comments and blank lines are ignored, so annotate freely.
+
+# --- Sweden: toys and general retail ---
+lekia.se                 # uses "Bbx" naming, like ginza
+lekextra.se
+leklust.se
+leksaksjatten.se
+alltileksaker.se
+eurotoys.se
+babyland.se
+jollyroom.se
+lekmer.se
+coolshop.se
+teknikproffset.se
+webhallen.com
+cdon.se
+fyndiq.se
+boozt.com
+adlibris.com
+spelexperten.com
+maxgaming.se
+elgiganten.se
+power.se
+bigshopper.se            # found by discover_stores search, 2026-09-09
+ginza.se                 # already tracked — probe confirms the tool agrees
+gameshop.se              # already tracked
+
+# --- Sweden: aggregators (sources of retailers, not retailers) ---
+prisjakt.nu              # answered 403 to a plain fetch on 2026-09-09
+pricerunner.se           # renders client-side
+
+# --- Europe / worldwide: hobby and specialist ---
+rarewaves.com            # user-found, 2026-09-09
+beyblade-toys.com
+beywarehouse.com
+beysandbricks.com
+shopforgeek.com          # FR — EAN-confirmed
+probems.be               # BE — EAN-confirmed
+goldsaucerstore.com      # puts the EAN in its URLs
+gamesplusmalta.com       # MT — EAN-confirmed
+otakume.com              # UAE, Takara Tomy stock
+blackfire.eu             # EU distributor, not retail
+jap-one.com              # DE/EU, puts the EAN in its URLs
+storegan.it              # IT, puts the EAN in its URLs
+smythstoys.com
+thetoyshop.com
+magicmadhouse.co.uk
+zavvi.com
+entertainmentearth.com
+bigbadtoystore.com
+
+# --- Japan: Takara Tomy originals (different names, same EANs) ---
+amiami.com
+hlj.com
+plazajapan.com
+solarisjapan.com
+nin-nin-game.com
