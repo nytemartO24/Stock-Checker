@@ -58,7 +58,9 @@ stock_checker/
     sites.yaml          # which sites/products are enabled, check interval, etc. (no secrets)
   state/                # runtime state, gitignored: one file per site
                         #   (amazon.json keys products as "<market>:<asin>"),
-                        #   plus amazon_reference_prices.json (long-lived)
+                        #   plus amazon_reference_prices.json and
+                        #   amazon_delivery.json — long-lived knowledge kept
+                        #   apart so clearing alert state destroys neither
   main.py                # entrypoint: single-run mode (for cron) — checks all enabled sites once
   run_loop.py            # entrypoint: polling-loop mode (for local dev)
   tests/
@@ -78,7 +80,9 @@ class StockResult:
     price_value: float | None   # normalized, for comparison
     currency: str | None
     seller: str | None          # context in the alert, never a gate
+    delivery_date: str | None   # when it would arrive, as displayed
     alertable: bool = True      # site may veto; core does not ask why
+    alert_reason: str | None    # site may REQUEST an alert, stating why
     notes: list[str] = field(default_factory=list)
 ```
 
@@ -191,9 +195,9 @@ are written as:
 
     wsl.exe -d kali-linux -- ssh vps '<command>'
 
-Verified 2026-09-08: git operations, log reads, and file writes under
-`/root` all work. The repo is at `/root/news-notifier` (the news-notifier
-pilot); Stock Checker is not deployed there yet.
+Verified: git operations, log reads, and file writes under `/root` all work.
+Two repos live there — `/root/news-notifier` (the pilot) and
+`/root/stock-checker` (this project).
 
 Deployed 2026-09-08 to `/root/stock-checker`, cron-only (no systemd — cron
 owns the timing and there is nothing to keep alive). `deploy/README.md` has
@@ -201,13 +205,19 @@ the full picture; the short version:
 
 - One job at `:15/:45`, clear of news-notifier's Playwright jobs at `:00/:30`
   and `:10/:40` so two Chromium instances never start together.
-- Installed **dry-run**. The Amazon checker watches the same ASINs as the
-  live pilot, so both sending would double-alert from diverging state.
-  `deploy/status.sh` has an explicit conflict check for exactly this.
+- **Live and sending** since 2026-09-08. The pilot's `track_delivery_multi.py`
+  was retired at the same time, because both watch the same ASINs and both
+  sending would double-alert from diverging state; `deploy/status.sh` has an
+  explicit conflict check for exactly that. The pilot's catalog scraper and
+  hypixel job still run — this project replaces neither. Crontab backup at
+  `/root/crontab.backup.pre-golive`.
 - `deploy/setup.sh` MERGES its cron entries into the existing crontab. Never
   make it replace: news-notifier's live jobs share that crontab.
-- No git remote exists yet, so deployment is a tar over SSH (README has the
-  command), not a clone. Setting up a remote would make updates a `git pull`.
+- The VPS is a clone of https://github.com/nytemartO24/Stock-Checker (public,
+  because the box has no git credentials at all). Updating is
+  `cd /root/stock-checker && git pull && ./deploy/setup.sh`. `.env`, `state/`
+  and `.venv/` are gitignored, so a pull never touches the webhook, the
+  accumulated reference prices, or the browser.
 
 Notes for whoever runs this next:
 - The key lives only in WSL (`/home/kali/.ssh/id_ed25519`), not on the
@@ -321,9 +331,11 @@ collection costs one request per run and adds nothing, since the checker
 dedupes by handle), but whether to include one is a judgement about content.
 
 Currently tracked: popsplanet's `beyblade-x-booster` / `-starter-pack` /
-`-double-pack` (102 products, EUR) and toysnowman's `beyblade` (60, SEK).
-A store that is not Shopify needs its own module — see the transport rules
-in Conventions.
+`-double-pack` (102 products, EUR), toysnowman's `beyblade` (59 after
+excluding Beyblade Burst, SEK), and gameshop.se via the WooCommerce module
+(131 after the same exclusion, SEK). 16 watchlisted items across the three.
+A store that is not Shopify needs its own module — `audit_store.py` only
+probes Shopify, and says so when a store is not.
 
 **Watchlist vs. tracking — keep these separate.** A Shopify collection
 arrives in ONE request, so tracking every product in it is free and worth
