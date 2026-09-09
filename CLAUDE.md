@@ -492,7 +492,19 @@ user found it, the catalogue is unusually complete and it quotes SEK.)
 
 #### Where to find EU shops — what works, measured 2026-09-09
 
-**`directory` mode: OpenStreetMap via Overpass. This is the store database.**
+**`directory` mode: OpenStreetMap via Overpass — worth ONE pass, not a strategy.**
+
+Measured precision: probing 158 harvested Belgian shops produced **6 usable
+searches (3.8%)**, and only ONE cleared the wide-selection bar. OSM maps
+PHYSICAL shops, so most either have no real webshop or stock a handful of
+Beyblades. Compare: the `offers` mode below produced 14 German retailers in
+minutes. The pass still earned its keep — lereservoir.lu, now tracked, came from
+it and nothing else found it — but scaling it up is the wrong instinct.
+
+**Never run two Overpass harvests at once.** Four concurrent copies were left
+running from failed launches, all against one IP; that is rude to a free service
+and self-defeating, and it probably caused tile timeouts later blamed on query
+cost.
 
     python scripts/discover_stores.py directory --countries DE,NL,BE,AT,DK,FI,FR \
         --out-domains config/candidate_stores_eu.txt
@@ -520,6 +532,23 @@ it feeds `probe`; that is the division of labour, not a shortcoming.
   is kept only because it is honest about yielding nothing on Bing.
 - **Engine region tokens** (`cc=SE`, `kl=se-sv`) shift ranking slightly and do
   not restrict by country.
+
+**The sweep is CLOSED (2026-09-09).** Dozens of EU stockists were found and
+reviewed with the tools below; the user kept exactly two — **kaufland.de** and
+**lereservoir.lu** — and discarded the rest by name, including otto.de (120
+products) and galaxus.de (50). `config/candidate_stores.txt` lists every
+rejection so none of them gets "rediscovered" and re-proposed. Selection size
+was not the deciding factor; the user's own judgement of the shop was. Do not
+re-open the sweep without being asked.
+
+**kaufland.de is not trackable yet.** Cloudflare's JS challenge ("Nur einen
+Moment…") never resolves: plain HTTP 403, headless browser blocked, and a HEADED
+browser with a persistent profile, `--disable-blink-features=AutomationControlled`
+and an 18s wait still never receives a `cf_clearance` cookie. So it is not
+headless detection. Its offers ARE readable through idealo.de's offer list,
+which is the only route found — indirect, and limited to products idealo indexes.
+Anything further needs a stealth layer (patchright/camoufox) and a decision that
+the dependency is worth it.
 
 **Found 2026-09-09 that the web search had missed entirely:**
 

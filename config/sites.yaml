@@ -260,6 +260,38 @@ sites:
       min_delay_seconds: 1.0
       max_delay_seconds: 3.0
 
+  lereservoir:
+    type: lereservoir
+    enabled: true
+    # Luxembourg. Found by harvesting OpenStreetMap, and the one store that made
+    # that harvest worth doing — it had Delta Unicorn PO 3-60GU in stock as
+    # "Fig Beyblade X Guadalupe Mountains".
+    #
+    # BOTH listings are polled and unioned because NEITHER IS COMPLETE: the
+    # shop's own search for "beyblade" returns 2 Beyblade products while the
+    # Hasbro category contains 4. Measured, not assumed.
+    listing_paths:
+      - /catalogue-gamme-hasbro-parent-3386.html   # the real catalogue: 4 of 12 are Beyblade
+      - /?s=beyblade&post_type=product             # catches anything filed outside Hasbro
+    currency: EUR
+    currency_symbol: "€"
+    # The Hasbro range here is mostly Star Wars, so this filter is load-bearing
+    # rather than tidying.
+    title_include:
+      - beyblade
+    # WATCHLIST ENTRIES ARE EANs — the tile's own id is the barcode, and it
+    # repeats in the product URL. Same as rarewaves, unlike everywhere else.
+    watchlist:
+      - "5010996431134"  # Fig Beyblade X Guadalupe Mountains = Delta Unicorn PO 3-60GU
+      - "5010996431189"  # Fig Beyblade X Great Sand Dunes
+      - "5010996438584"  # Fig Beyblade X Great Smokey Mountains
+      - "5010996309518"  # Starter Pack Beyblade X Courage Dran S 6-60V CX
+    alert_on_new_products: true
+    rate_limit:
+      # Two page loads per run against a small shop.
+      min_delay_seconds: 2.0
+      max_delay_seconds: 4.0
+
   toysnowman:
     type: shopify
     enabled: true

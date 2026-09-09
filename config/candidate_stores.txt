@@ -1,91 +1,50 @@
 # Candidate retailers for `scripts/discover_stores.py probe`.
 #
-# NOT a tracked-store list — config/sites.yaml owns that. These are domains
-# worth ASKING whether they stock Beyblade X, via their own site search.
+# NOT a tracked-store list — config/sites.yaml owns that.
 #
-# TWO RULES DECIDE WHAT BELONGS HERE, both from the user:
+# CUT HARD ON 2026-09-09, by the user's decision. The wide EU sweep is over:
+# dozens of shops were found and reviewed, and of everything discovered only
+# TWO were judged worth keeping — kaufland.de and lereservoir.lu. Everything
+# else was discarded explicitly, not lost. Do not re-add a shop from this file's
+# history without being asked; it was already looked at and rejected.
 #
-# 1. SHIPS TO SWEDEN, FROM THE EU. EU core (DE/NL/BE/AT/LU/FR) is the target
-#    because freight is cheapest; Nordic neighbours equally good; rest of the
-#    EU fine but slower. The US and UK are OUT — post-Brexit the UK is a third
-#    country, so customs and freight erase any saving on a 130 kr top.
-# 2. A WIDE SELECTION, CONSISTENTLY. A shop with three Beyblades is not worth a
-#    request every 30 minutes. Judged on the product count `probe` reports.
+# The rules that decided it:
+#   1. Ships to Sweden, from the EU. EU core (DE/NL/BE/AT/LU/FR) is cheapest on
+#      freight. The US and UK are out — post-Brexit the UK is a third country,
+#      so customs erase the saving on a 130 kr top.
+#   2. A wide selection, consistently. A shop with three Beyblades is not worth
+#      a request every 30 minutes.
+#   3. The user's own judgement of the shop, which overrides both of the above.
 #
-# Removed 2026-09-09 under those rules, recorded so they are not re-added by a
-# future search: beywarehouse.com, beysandbricks.com, beyblade-toys.com,
-# entertainmentearth.com, bigbadtoystore.com, troveofcollectibles.com (US);
-# thetoyshop.com, smythstoys.com, magicmadhouse.co.uk, zavvi.com,
-# staractionfigures.co.uk, eclipse-gaming.co.uk (UK); hlj.com, amiami.com,
-# plazajapan.com, solarisjapan.com, nin-nin-game.com (JP); otakume.com (UAE).
-# And on selection size: lekextra.se (2 products), babyland.se (1),
-# storegan.it (1), probems.be (5), goldsaucerstore.com (10 — and mostly
-# accessories).
-#
-# `#` comments and blank lines are ignored, so annotate freely.
+# Discarded German finds (all confirmed stockists, all rejected anyway):
+# otto.de (120 products), galaxus.de (50), voelkner.de, alternate.de, thalia.de,
+# buecher.de, proshop.de, duo-shop.de, toynova.de, galaxiespielzeug.de,
+# richtiggutesspielzeug.de, einzigundartig.de, rofu.de, spielwaren-kroemer.de,
+# ideeundspiel.com, jap-one.com, 0815.eu, kidinn.com.
+# Discarded NL/BE/FR/LU: intertoys.nl, top1toys.nl, dreamland.nl, bol.com,
+# 3vosjes.nl, king-jouet.com, bluebrixx.com, indenolifant.be (16),
+# tklavertje-vier.be, natuurlijkleuk.be, playerliege.com, broze.be.
+# Discarded non-EU: beywarehouse, beysandbricks, beyblade-toys,
+# entertainmentearth, bigbadtoystore, troveofcollectibles, thetoyshop,
+# smythstoys, magicmadhouse, zavvi, staractionfigures, eclipse-gaming, hlj,
+# amiami, plazajapan, solarisjapan, nin-nin-game, otakume.
+# Discarded on size: lekextra.se (2), babyland.se (1), storegan.it (1),
+# probems.be (5), goldsaucerstore.com (10, mostly accessories),
+# gamesplusmalta.com (13).
 
-# --- Sweden: confirmed usable, wide selection ---
-bigshopper.se            # 69 products — the widest of any .se shop found
-gameshop.se              # 40 — already tracked
-ginza.se                 # already tracked; client-side search, uses its JSON API
-pricerunner.se           # 18 — aggregator, so a source of shops not a shop
+# --- Kept: worth probing, not yet tracked ---
+kaufland.de              # The one German find worth keeping (user's call). NOT
+                         # yet trackable: Cloudflare's JS challenge never
+                         # resolves — plain HTTP 403, headless browser blocked,
+                         # AND a headed browser with a persistent profile and an
+                         # 18s wait never gets a cf_clearance cookie. Its offers
+                         # ARE visible through idealo.de, which is the only route
+                         # found so far. See CLAUDE.md.
 
-# --- Sweden: client-side search, need their JSON endpoint or --browser ---
-lekia.se                 # uses "Bbx" naming, like ginza
-cdon.se
-coolshop.se
-adlibris.com
-jollyroom.se
-lekmer.se
-boozt.com
-teknikproffset.se
-fyndiq.se
-eurotoys.se
-webhallen.com
-prisjakt.nu              # aggregator; 403 to HTTP, needs --browser
-
-# --- Germany: idealo.de offer lists on real Beyblade pages, 2026-09-09 ---
-# The highest-value group here: cheap freight to Sweden and real catalogues.
-# Every one of these was taken from a page for an actual Beyblade product —
-# an earlier pass harvested shops off a fidget cube and a squishy toy that
-# idealo's search had returned, which is how einzigundartig.de got in here and
-# why it is now gone.
-otto.de                  # 120 PRODUCTS via its own /suche — the widest found anywhere
-galaxus.de               # 50 products via own search; Swiss-owned, VERIFY IT SHIPS TO SE
-kaufland.de              # major DE marketplace
-voelkner.de
-alternate.de             # large DE electronics/general retailer
-thalia.de                # DE books/media chain, carries toys
-buecher.de               # ditto
-proshop.de               # DE/DK electronics chain
-duo-shop.de
-toynova.de               # toy specialist (1 product on own search — watch this)
-galaxiespielzeug.de      # toy specialist
-richtiggutesspielzeug.de # toy specialist
-rofu.de                  # DE toy chain (from OpenStreetMap)
-spielwaren-kroemer.de    # DE toy specialist (from OpenStreetMap)
-ideeundspiel.com         # DE toy buying group (1 product)
-0815.eu                  # region unclear, check
-kidinn.com               # region unclear, check
-
-# --- Netherlands / Belgium / France ---
-intertoys.nl             # the big NL toy chain — 8 products via /zoeken (browser)
-top1toys.nl              # confirmed via kieskeurig.nl offer lists
-dreamland.nl             # the big BE toy chain
-3vosjes.nl
-king-jouet.com           # large FR toy chain
-bluebrixx.com
-# bol.com — kieskeurig labels it "bol." / "bol. Plaza", which the parser cannot
-# turn into a domain without guessing. It is the largest NL retailer and it did
-# appear on real Beyblade pages, so probe it directly rather than trusting the
-# label.
-bol.com
-
-# --- EU, kept for coverage despite a narrower range ---
-gamesplusmalta.com       # 13 products, WooCommerce, plain HTTP works
-jap-one.com              # DE-based, publishes gtin13, EUR pricing
-blackfire.eu             # EU DISTRIBUTOR, not retail — mine its dealer list
-
-# --- Deliberate non-EU exception ---
-rarewaves.com            # UK. Tracked anyway: user's own find, SEK pricing,
-                         # unusually complete catalogue. See sites.yaml.
+# --- Already tracked (in sites.yaml); listed so probe can re-check them ---
+bigshopper.se            # 69 product links — the widest .se shop found, untracked
+gameshop.se
+ginza.se
+lereservoir.lu           # LU, tracked 2026-09-09 — 4 Beyblades, EAN-keyed
+prisjakt.nu              # aggregator, a source of shops rather than a shop
+pricerunner.se           # ditto
