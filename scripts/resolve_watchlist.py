@@ -117,16 +117,53 @@ def load_amazon_catalogue(base: Path) -> dict[str, dict[str, str]]:
     return out
 
 
-def match(catalogue: dict[str, str], name: str, wanted_names: list[str]
+# A Beyblade X model code — 4-50UF, 9-65B, 3-80FB, 0-70LP. Printed on the
+# product itself and IDENTICAL in every language at every retailer, which makes
+# it the one cross-catalogue key that needs no barcode.
+CODE = re.compile(r"\b(\d{1,2}-\d{2}[A-Z]{0,3})\b")
+
+
+def codes(title: str) -> set[str]:
+    return set(CODE.findall((title or "").upper()))
+
+
+def match(catalogue: dict[str, str], name: str, wanted_names: list[str],
+          extra_codes: set[str] | None = None
           ) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
-    """(singles, bundles) whose titles contain every identity word of `name`."""
+    """(singles, bundles) matching `name` by words OR by model code.
+
+    THE CODE PASS IS NOT REDUNDANT. Amazon lists Sterling Wolf as "Silver Wolf",
+    so a word match finds it at three stores and misses it on all four Amazon
+    markets — a silent gap in exactly the place the user most wants covered. The
+    code (3-80FB) is on the product and does not vary, so once any store reveals
+    it, every other catalogue can be searched by it regardless of what that
+    retailer decided to call the thing.
+    """
     need = tokens(name)
     singles, bundles = [], []
     for identifier, title in catalogue.items():
-        if need and need <= tokens(title):
+        by_words = bool(need) and need <= tokens(title)
+        by_code = bool(extra_codes) and bool(extra_codes & codes(title))
+        if by_words or by_code:
             (bundles if looks_like_bundle(title, wanted_names) else singles).append(
                 (identifier, " ".join((title or "").split())))
     return sorted(singles), sorted(bundles)
+
+
+def learn_codes(catalogues: dict[str, dict[str, str]], name: str,
+                wanted_names: list[str]) -> set[str]:
+    """Model codes for `name`, learned from any catalogue that names it plainly.
+
+    Taken from SINGLES only: a bundle title carries four codes and three belong
+    to other products, so learning from one would drag unrelated items into
+    every subsequent match.
+    """
+    found: set[str] = set()
+    for catalogue in catalogues.values():
+        singles, _ = match(catalogue, name, wanted_names)
+        for _, title in singles:
+            found |= codes(title)
+    return found
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -156,11 +193,15 @@ def main(argv: list[str] | None = None) -> int:
     per_market: dict[str, dict[str, list]] = {m: {"single": [], "bundle": []} for m in amazon}
     misses: dict[str, list[str]] = {}
 
+    all_catalogues = {**catalogues, **{f"amazon/{m}": c for m, c in amazon.items()}}
     for name in wanted:
         print(f"\n=== {name} ===")
+        learned = learn_codes(all_catalogues, name, wanted)
+        if learned:
+            print(f"   (model code: {', '.join(sorted(learned))})")
         found_anywhere = False
         for site, cat in catalogues.items():
-            singles, bundles = match(cat, name, wanted)
+            singles, bundles = match(cat, name, wanted, learned)
             for identifier, title in singles:
                 print(f"   {site:<12} {identifier}")
                 print(f"                {title[:74]}")
@@ -174,7 +215,7 @@ def main(argv: list[str] | None = None) -> int:
             if not singles and not bundles:
                 misses.setdefault(name, []).append(site)
         for market, cat in amazon.items():
-            singles, bundles = match(cat, name, wanted)
+            singles, bundles = match(cat, name, wanted, learned)
             for asin, title in singles:
                 print(f"   amazon/{market:<5} {asin}")
                 print(f"                {title[:74]}")
