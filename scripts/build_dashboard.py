@@ -139,7 +139,10 @@ ALERT_LINE = re.compile(r"^(\S+) \[INFO\] ALERT:\s*$")
 # news-notifier's catalogue scraper: "  se  1 new of 48 found". The "of N" is
 # the only real health signal Amazon has — if a market's 48 became 12, discovery
 # broke, and nothing currently watches that.
-DISCOVERY_LINE = re.compile(r"^\s*([a-z]{2})\s+(\d+) new of (\d+) found")
+# NOT anchored at line start: these lines carry the log prefix
+# ("2026-09-09T19:41:11 [INFO]   se  1 new of 48 found"), and anchoring
+# silently matched nothing at all — the table just never appeared.
+DISCOVERY_LINE = re.compile(r"([a-z]{2})\s+(\d+) new of (\d+) found")
 
 
 def read_discovery(path: Path, tail_bytes: int = 400_000) -> dict[str, list[int]]:
@@ -155,7 +158,7 @@ def read_discovery(path: Path, tail_bytes: int = 400_000) -> dict[str, list[int]
         lines = fh.read().decode("utf-8", "replace").splitlines()
     found: dict[str, list[int]] = defaultdict(list)
     for line in lines:
-        hit = DISCOVERY_LINE.match(line)
+        hit = DISCOVERY_LINE.search(line)
         if hit:
             found[hit.group(1)].append(int(hit.group(3)))
     return dict(found)
@@ -319,7 +322,8 @@ def panel_prices(sites_cfg: dict, states: dict, wanted: list[str], now: datetime
             low_text = "—"
             stats = history.stats(site, pid) if history else None
             if stats:
-                low_text = f"{stats['low']:,.0f} {stats['currency']}".strip()
+                digits = 2 if stats["low"] < 100 else 0
+                low_text = f"{stats['low']:,.{digits}f} {stats['currency']}".strip()
                 if stats["points"] > 1 and row.get("price_value") is not None:
                     if row["price_value"] <= stats["low"]:
                         flags.append(pill("ALL-TIME LOW", "good"))
