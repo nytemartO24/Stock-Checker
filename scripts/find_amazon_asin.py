@@ -106,6 +106,16 @@ def main(argv: list[str] | None = None) -> int:
                 need = tokens(name)
                 hits = []
                 for row in rows:
+                    # THE PRODUCT MUST BE A BEYBLADE. Without this the name words
+                    # match anything that happens to contain them: "Sterling Wolf"
+                    # returned 42 sterling-silver wolf pendants, "Clock Mirage" a
+                    # book called The Clock Mirage, and "Dark Perseus" another
+                    # book. Amazon's search does not restrict to the brand, so
+                    # the caller must. Same failure as harvesting aggregator
+                    # offers off unrelated products.
+                    low = row["title"].lower()
+                    if "beyblade" not in low and "bbx" not in low:
+                        continue
                     title_tokens = tokens(row["title"])
                     title_codes = {c.upper() for c in CODE.findall(row["title"].upper())}
                     if (need and need <= title_tokens) or (wanted_codes & title_codes):
