@@ -463,6 +463,14 @@ just not ones the user wants — which is a much better answer than "no matches"
 
 ### Names vary more than expected — the full list
 
+**Amazon.se uses Hasbro's park codenames too, and they keep coming**: Browns
+Canyon = Seize Jaguar, Shenandoah = Cobalt Drake, Mill Springs = Nether Incendio
+(all 2026-09-09/10). And amazon.es TRANSLATES names — "Nether Fire Z UX" where
+fr says "Nether Incendio". So one ASIN's title can differ by CODENAME, by
+LANGUAGE or by WORD ORDER, three independent axes. This is the strongest
+argument for the whole identifier-not-name approach, and for `find_amazon_asin`
+matching on the model code as well as the words.
+
 Same product, per retailer: `Scale Shark 4-50UF` (Hasbro), `SharkScale 4-50UF`
 (the wiki), `Bbx Kobuk Valley` (Ginza), and on Amazon **`Bey Blade X`, as two
 words**. That last one matters: a filter requiring "beyblade" drops it. Amazon

@@ -144,6 +144,14 @@ sites:
       # amazon.se lists it as "BEY Blade BBX Shenandoah" — another Hasbro park
       # codename, and note "BEY Blade" as two words again.
       - B0G4NFJJN1  # Cobalt Drake 4-60F  (= .se "BEY Blade BBX Shenandoah")
+      # Supplied by the user 2026-09-10. Verified on all four markets, and it
+      # shows a naming variant the codenames had not: amazon.es TRANSLATES the
+      # product name to "Nether FIRE Z UX" while fr keeps "Nether Incendio".
+      # So a name can differ by codename (se), by language (es), or by word
+      # order — three independent ways, which is why watchlists are identifiers.
+      # Unavailable everywhere; last-known prices range EUR 9.99 (de/es) to
+      # kr 720.98 (se), the latter a stale scalp listing.
+      - B0H1RKKYHC  # Nether Incendio Z UX  (= .se "BEY BBX Mill Springs", .es "Nether Fire")
     rate_limit:
       # A browser page-load is far heavier than a JSON request, and this is
       # 24 of them per run (6 ASINs x 4 markets).
