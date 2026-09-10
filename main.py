@@ -23,6 +23,7 @@ from core.http import PoliteClient
 from core.logging_setup import configure
 from core.notifier import (DiscordNotifier, format_new_product_alert,
                            format_site_alert, format_stock_alert)
+from core.price_history import PriceHistory
 from core.storage import SiteState
 from sites import build_checker
 
@@ -40,6 +41,9 @@ def check_site(config: SiteConfig, state_dir: Path, notifier: DiscordNotifier) -
     the run continues.
     """
     state = SiteState(state_dir / f"{config.name}.json")
+    # Kept apart from alert state deliberately: clearing one must not destroy
+    # the other. Same reasoning as amazon_reference_prices.json.
+    history = PriceHistory(state_dir / "price_history.json")
     seen: set[str] = set()
     alerts = 0
     in_stock = 0
@@ -76,6 +80,11 @@ def check_site(config: SiteConfig, state_dir: Path, notifier: DiscordNotifier) -
                     )
                     continue
             state.record(result)
+            # Recorded for EVERY product, watchlisted or not, and whether or not
+            # it alerted: the question this answers later is "has it ever been
+            # cheaper than this", which a watchlist cannot anticipate.
+            history.observe(config.name, result.product_id, result.price_value,
+                            result.currency, result.in_stock, result.product_name)
 
     if state.is_first_run:
         logger.info("[%s] first run — seeded %d product(s) without notifying", config.name, len(seen))
@@ -89,6 +98,7 @@ def check_site(config: SiteConfig, state_dir: Path, notifier: DiscordNotifier) -
     else:
         state.prune(seen)
     state.save()
+    history.save()
     logger.info("[%s] %d product(s), %d in stock, %d alert(s)", config.name, len(seen), in_stock, alerts)
     return len(seen), alerts
 

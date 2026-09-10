@@ -44,6 +44,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import yaml  # noqa: E402
 
+from core.price_history import PriceHistory  # noqa: E402
 from sites.amazon.prices import to_sek  # noqa: E402
 
 # Reused rather than reimplemented: the dashboard's coverage panel must agree
@@ -134,6 +135,30 @@ RUN_DONE = re.compile(r"^(\S+) \[INFO\] run complete: (\d+) alert\(s\) across (\
 SITE_LINE = re.compile(r"^(\S+) \[INFO\] \[([\w.-]+)\] (\d+) product\(s\), (\d+) in stock, (\d+) alert")
 WARN_LINE = re.compile(r"^(\S+) \[(WARNING|ERROR)\] (.*)$")
 ALERT_LINE = re.compile(r"^(\S+) \[INFO\] ALERT:\s*$")
+
+# news-notifier's catalogue scraper: "  se  1 new of 48 found". The "of N" is
+# the only real health signal Amazon has — if a market's 48 became 12, discovery
+# broke, and nothing currently watches that.
+DISCOVERY_LINE = re.compile(r"^\s*([a-z]{2})\s+(\d+) new of (\d+) found")
+
+
+def read_discovery(path: Path, tail_bytes: int = 400_000) -> dict[str, list[int]]:
+    """{market: [found-count per run]} from news-notifier's catalogue log."""
+    if not path.exists():
+        return {}
+    with path.open("rb") as fh:
+        try:
+            fh.seek(-tail_bytes, os.SEEK_END)
+            fh.readline()
+        except OSError:
+            fh.seek(0)
+        lines = fh.read().decode("utf-8", "replace").splitlines()
+    found: dict[str, list[int]] = defaultdict(list)
+    for line in lines:
+        hit = DISCOVERY_LINE.match(line)
+        if hit:
+            found[hit.group(1)].append(int(hit.group(3)))
+    return dict(found)
 
 
 def read_log(path: Path, tail_bytes: int = 3_000_000) -> dict:
@@ -245,7 +270,8 @@ def panel_health(log: dict, now: datetime) -> str:
     return (f'<section class="cards">{html_cards}</section>')
 
 
-def panel_prices(sites_cfg: dict, states: dict, wanted: list[str], now: datetime) -> str:
+def panel_prices(sites_cfg: dict, states: dict, wanted: list[str], now: datetime,
+                 history: PriceHistory | None = None) -> str:
     """Every wanted product, at every store that has it, normalised to SEK.
 
     This is both the shopping view and the scalp detector: the same product side
@@ -267,7 +293,7 @@ def panel_prices(sites_cfg: dict, states: dict, wanted: list[str], now: datetime
                 offers.append((sek, site, pid, row))
         if not offers:
             rows.append([f'<strong>{esc(name)}</strong>',
-                         pill("nowhere", "bad"), "—", "—", "—"])
+                         pill("nowhere", "bad"), "—", "—", "—", "—"])
             continue
         priced = [o for o in offers if o[0]]
         cheapest = min((o[0] for o in priced), default=None)
@@ -276,6 +302,11 @@ def panel_prices(sites_cfg: dict, states: dict, wanted: list[str], now: datetime
             flags = []
             if row.get("in_stock"):
                 flags.append(pill("IN STOCK", "good"))
+            elif row.get("price_text"):
+                # A price with no way to buy it reads as an offer at a glance.
+                # Saying so explicitly is the difference between "cheap!" and
+                # "cheap, and you cannot have it".
+                flags.append(pill("OUT OF STOCK", "neutral"))
             if sek and cheapest and sek > cheapest * 2:
                 # Cross-store outlier: the only scalp signal that works without
                 # price history, and it caught the real one.
@@ -283,19 +314,32 @@ def panel_prices(sites_cfg: dict, states: dict, wanted: list[str], now: datetime
             seen = parse_ts(row.get("last_seen"))
             if seen and (now - seen) > timedelta(hours=STALE_HOURS):
                 flags.append(pill(f"stale {age(seen, now)}", "warn"))
+            # Cheapest EVER seen here, which is the question a current-price
+            # table cannot answer: state overwrites the price every run.
+            low_text = "—"
+            stats = history.stats(site, pid) if history else None
+            if stats:
+                low_text = f"{stats['low']:,.0f} {stats['currency']}".strip()
+                if stats["points"] > 1 and row.get("price_value") is not None:
+                    if row["price_value"] <= stats["low"]:
+                        flags.append(pill("ALL-TIME LOW", "good"))
+                    elif row["price_value"] > stats["low"] * 1.5:
+                        low_text += f' <span class="dim">({row["price_value"] / stats["low"]:.1f}x)</span>'
+                low_text += f' <span class="dim">· {stats["points"]}pt</span>'
             rows.append([
                 f'<strong>{esc(name)}</strong>' if (sek, site, pid, row) == sorted(
                     offers, key=lambda o: (o[0] is None, o[0] or 0))[0] else "",
                 esc(site),
                 link(row.get("url"), row.get("price_text") or "—")
                 + (f' <span class="dim">≈{sek:,.0f} kr</span>' if sek else ""),
+                low_text,
                 " ".join(flags) or "—",
                 esc((row.get("name") or "")[:58]),
             ])
         if not in_stock:
-            rows.append(["", "", "", pill("none in stock anywhere", "warn"), ""])
-    return table(["Wanted", "Store", "Price", "Flags", "Listed as"], rows,
-                 classes="prices")
+            rows.append(["", "", "", "", pill("none in stock anywhere", "warn"), ""])
+    return table(["Wanted", "Store", "Price", "Lowest seen", "Flags", "Listed as"],
+                 rows, classes="prices")
 
 
 def panel_triage(sites_cfg: dict, states: dict, now: datetime) -> str:
@@ -387,7 +431,8 @@ def panel_watchlist_integrity(sites_cfg: dict, states: dict, now: datetime) -> s
                  empty="Every watchlist entry matched a product in the latest run.")
 
 
-def panel_sites(log: dict, sites_cfg: dict, states: dict, now: datetime) -> str:
+def panel_sites(log: dict, sites_cfg: dict, states: dict, now: datetime,
+                discovery: dict[str, list[int]] | None = None) -> str:
     """Catalogue size per site, and whether it is drifting.
 
     gameshop went 131 -> 98 products. Store change or a parser quietly losing
@@ -397,26 +442,68 @@ def panel_sites(log: dict, sites_cfg: dict, states: dict, now: datetime) -> str:
     for site in sorted(sites_cfg):
         if not sites_cfg[site].get("enabled"):
             continue
-        history = log["sites"].get(site, [])[-LOG_RUNS:]
-        latest = history[-1] if history else None
-        counts = [h["products"] for h in history]
+        state = states.get(site, {})
+        runs = log["sites"].get(site, [])[-LOG_RUNS:]
+        counts = [h["products"] for h in runs]
+        # Counted from STATE, not the log: a manual run prints to the terminal
+        # while only cron redirects into the log file, so a log-derived count
+        # silently lags behind every hand-run check.
+        current = len(state)
+        in_stock = sum(1 for row in state.values() if row.get("in_stock"))
+        watchlist = sites_cfg[site].get("watchlist") or []
+
+        if site == "amazon":
+            # Amazon has NO catalogue here — it visits exactly the watchlisted
+            # ASINs, so this count is watchlist x markets and moves only when
+            # the config changes. Reporting that as "catalogue drift" describes
+            # our own edits as if they were a health signal, and a real parser
+            # failure would not move it at all.
+            markets = sites_cfg[site].get("markets") or []
+            shape = (f"{len(watchlist)} ASIN(s) x {len(markets)} market(s)"
+                     if markets else f"{current}")
+            rows.append([
+                esc(site), f'{esc(current)} <span class="dim">= {esc(shape)}</span>',
+                esc(in_stock), esc(len(watchlist)),
+                pill("n/a — watchlist-driven", "neutral"),
+                '<span class="dim">see discovery below</span>',
+            ])
+            continue
+
         first_count = counts[0] if counts else None
         drift = ""
-        if first_count and latest and latest["products"] != first_count:
-            delta = latest["products"] - first_count
+        if first_count and current != first_count:
+            delta = current - first_count
             drift = pill(f"{delta:+d} over {len(counts)} runs",
                          "warn" if abs(delta) > max(3, first_count * 0.1) else "neutral")
         spark = ",".join(str(c) for c in counts[-24:])
         rows.append([
-            esc(site),
-            esc(latest["products"] if latest else "—"),
-            esc(latest["in_stock"] if latest else "—"),
-            esc(len(sites_cfg[site].get("watchlist") or []) or "all"),
+            esc(site), esc(current), esc(in_stock),
+            esc(len(watchlist) or "all"),
             drift or "steady",
             f'<span class="spark" data-values="{esc(spark)}"></span>',
         ])
-    return table(["Site", "Products", "In stock", "Watchlisted", "Catalogue drift",
-                  "Last 24 runs"], rows)
+    out = table(["Site", "Products", "In stock", "Watchlisted", "Catalogue drift",
+                 "Last 24 runs"], rows)
+
+    if discovery:
+        # THE metric the drift column actually wants for Amazon, and nothing
+        # watched it before: if a market's ~48 became 12, discovery broke.
+        disc_rows = []
+        for market, found in sorted(discovery.items()):
+            recent = found[-LOG_RUNS:]
+            latest, first = recent[-1], recent[0]
+            delta = latest - first
+            disc_rows.append([
+                esc(f"amazon.{market}"), esc(latest),
+                pill(f"{delta:+d} over {len(recent)} runs",
+                     "warn" if abs(delta) > max(4, first * 0.15) else "neutral")
+                if delta else "steady",
+                f'<span class="spark" data-values="{",".join(str(c) for c in recent[-24:])}"></span>',
+            ])
+        out += ('<h3>Amazon discovery (news-notifier catalogue scraper)</h3>'
+                + table(["Market", "Products found per run", "Drift", "Last 24 runs"],
+                        disc_rows))
+    return out
 
 
 def panel_coverage(states: dict, wanted: list[str]) -> str:
@@ -610,6 +697,9 @@ def render(out: Path, state_dir: Path, config_dir: Path, log_path: Path) -> None
               for site, cfg in sites_cfg.items() if cfg.get("enabled")}
     states = {site: state for site, state in states.items() if state}
     log = read_log(log_path)
+    history = PriceHistory(state_dir / "price_history.json")
+    discovery = read_discovery(
+        Path("/root/news-notifier/logs/catalog-multi.log"))
 
     tracked = sum(len(s) for s in states.values())
     body = [
@@ -623,7 +713,7 @@ def render(out: Path, state_dir: Path, config_dir: Path, log_path: Path) -> None
               "sells it, normalised to SEK. Side by side is the only way a scalped "
               "listing shows up without price history — a 4x outlier is obvious here "
               "and invisible to any single-store rule.",
-              panel_prices(sites_cfg, states, wanted, now)),
+              panel_prices(sites_cfg, states, wanted, now, history)),
         panel("Decide on these — new and not watchlisted",
               "A new product alerts exactly ONCE. If nobody acts on that ping it "
               "never speaks again, which is how Whip Brachio slipped past. Copy the "
@@ -642,8 +732,11 @@ def render(out: Path, state_dir: Path, config_dir: Path, log_path: Path) -> None
         panel("Site health and catalogue drift",
               "A catalogue quietly shrinking looks exactly like a store removing "
               "stock. gameshop went 131 → 98 products; drift is the earliest sign "
-              "a parser broke.",
-              panel_sites(log, sites_cfg, states, now)),
+              "a parser broke. Amazon is shown separately because it has no "
+              "catalogue here — its count is watchlist × markets and moves only "
+              "when the config changes, so its real health signal is the "
+              "discovery table below.",
+              panel_sites(log, sites_cfg, states, now, discovery)),
         panel("Coverage of the wanted list",
               "Products stocked nowhere we track cannot be watchlisted at all — "
               "only new-product discovery will ever surface them, so their silence "
