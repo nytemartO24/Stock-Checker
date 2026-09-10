@@ -1,0 +1,28 @@
+# The Beyblades the user is hunting — supplied 2026-09-10.
+#
+# "All the ones I know exist that I don't have." This is the SOURCE OF TRUTH for
+# what should be watchlisted; the per-store `watchlist:` entries in sites.yaml
+# are derived from it by `scripts/resolve_watchlist.py`, because every store
+# keys products differently (Shopify handle, WooCommerce slug, Ginza numeric id,
+# EAN, ASIN) and none of those can be guessed from a name.
+#
+# Names are Hasbro/Takara Tomy product names as the user knows them. Word order
+# varies by retailer ("Shark Scale" is listed as "Scale Shark 4-50UF"), so the
+# resolver matches on tokens rather than the exact string.
+#
+# One name per line. `#` comments and blank lines ignored. Add a product code
+# after the name if a name alone is ambiguous.
+
+Ring Aether
+Suppress Superion
+Glare Cyclops
+Cobalt Drake
+Sterling Wolf
+Shark Scale
+Clock Mirage
+Nether Incendio
+Seize Jaguar
+Perseus Dark
+Reaper Incendio
+Blitz Bahamut
+Whip Brachio
