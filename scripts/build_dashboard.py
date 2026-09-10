@@ -105,20 +105,35 @@ def load_state(state_dir: Path, site: str) -> dict:
     return {k: v for k, v in entries.items() if isinstance(v, dict)}
 
 
-def parse_ts(value: str | None) -> datetime | None:
+# The VPS runs Europe/Berlin, and the two timestamp sources disagree: state
+# files are written UTC-aware ("...+00:00"), while the Python logger writes NAIVE
+# LOCAL time ("2026-09-10T09:58:27"). Reading a naive local stamp as UTC put
+# every log time two hours in the FUTURE, which rendered as "Last run -116m ago".
+LOCAL_TZ = datetime.now().astimezone().tzinfo
+
+
+def parse_ts(value: str | None, *, naive_is_local: bool = False) -> datetime | None:
+    """Parse a timestamp. `naive_is_local` for log lines, which carry no offset."""
     if not value:
         return None
     try:
         stamp = datetime.fromisoformat(str(value))
     except ValueError:
         return None
-    return stamp if stamp.tzinfo else stamp.replace(tzinfo=timezone.utc)
+    if stamp.tzinfo:
+        return stamp
+    return stamp.replace(tzinfo=LOCAL_TZ if naive_is_local else timezone.utc)
 
 
 def age(stamp: datetime | None, now: datetime) -> str:
     if stamp is None:
         return "—"
     delta = now - stamp
+    if delta < timedelta(0):
+        # A future timestamp is clock skew or a timezone mistake, never a real
+        # age. Rendering it as "-116m ago" reads as a broken checker rather than
+        # a broken clock, which is exactly the wrong thing to imply.
+        return "just now"
     if delta < timedelta(minutes=90):
         return f"{int(delta.total_seconds() // 60)}m"
     if delta < timedelta(hours=48):
@@ -255,7 +270,7 @@ def panel_health(log: dict, now: datetime) -> str:
             break
         since_alert += 1
     recent_failures = sum(r["failures"] for r in runs)
-    last_at = parse_ts(last["at"]) if last else None
+    last_at = parse_ts(last["at"], naive_is_local=True) if last else None
     stale = last_at is None or (now - last_at) > timedelta(hours=1)
 
     cards = [
@@ -587,7 +602,7 @@ def panel_amazon_discovery(sites_cfg: dict, wanted: list[str]) -> str:
 def panel_alerts(log: dict, now: datetime) -> str:
     rows = []
     for alert in reversed(log["alerts"][-40:]):
-        stamp = parse_ts(alert["at"])
+        stamp = parse_ts(alert["at"], naive_is_local=True)
         body = " · ".join(alert["body"]) or "—"
         rows.append([esc(age(stamp, now) + " ago"), esc(alert["at"][:19]),
                      esc(body[:180])])
@@ -710,7 +725,9 @@ def render(out: Path, state_dir: Path, config_dir: Path, log_path: Path) -> None
         "<header>",
         "<h1>Stock Checker</h1>",
         f'<div class="sub">{tracked} products tracked across {len(states)} sites · '
-        f'{len(wanted)} wanted · generated {now.strftime("%Y-%m-%d %H:%M")} UTC</div>',
+        f'{len(wanted)} wanted · generated '
+        f'{now.astimezone(LOCAL_TZ).strftime("%Y-%m-%d %H:%M %Z")} · '
+        f'rebuilt automatically at :20 and :50, after each check at :15 and :45</div>',
         "</header>",
         panel_health(log, now),
         panel("What you want, and where", "Every wanted product at every store that "
