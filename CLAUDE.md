@@ -386,6 +386,82 @@ redone, and so nothing here gets "simplified" back out.
   An entry without them (written by an older version) re-anchors quietly
   rather than firing.
 
+### Watchlists are DERIVED, not hand-written
+
+`config/wanted_products.txt` is the single source of truth for what the user is
+hunting — plain product names. The per-store `watchlist:` entries in `sites.yaml`
+are derived from it, because no store takes a name and none of their identifiers
+can be guessed:
+
+    python scripts/resolve_watchlist.py --yaml     # names -> identifiers
+    python scripts/resolve_ginza.py                # codenames -> barcode -> product
+    python scripts/find_amazon_asin.py "<name>"    # names -> ASIN (Amazon only)
+
+**It makes no new requests.** Every site's `state/<site>.json` already maps
+identifier -> title for its whole tracked catalogue, and news-notifier's
+`state/<market>/products.txt` maps ASIN -> title for everything its discovery has
+seen. That is the entire lookup, for free. Re-run after changing the wanted list,
+and paste the output — do not hand-edit an identifier, or the wanted list stops
+being the source of truth.
+
+Matching is on TOKENS, not substrings, which is what survives the word-order
+flips: "Shark Scale" is listed as "Scale Shark 4-50UF" and "Clock Mirage" as
+"Mirage Clock 9-65B". Bundles are reported separately from singles — at
+toysnowman, Tread Croc existed ONLY inside a four-item bundle, so a bundle hit is
+a real answer but not the same answer.
+
+**Match by MODEL CODE too.** `3-80FB` is printed on the product and is identical
+at every retailer in every language, so once any catalogue names a product
+plainly its code is learned and every other catalogue can be searched by it. This
+is the cheap cousin of the barcode bridge and it needs no product-page fetch.
+
+Coverage of the user's 13 wanted products, measured 2026-09-10: Shark Scale is at
+5 of 10 catalogues, most others at 1-4, and **Ring Aether and Blitz Bahamut at
+none** — absent from rarewaves' full 156-product catalogue too, so they are
+almost certainly unreleased here. Blitz Bahamut exists on amazon.se only as a
+945 kr Takara Tomy import. Both will arrive through new-product alerts.
+
+**Only 5 of the 13 are on Amazon at all.** Searching amazon.se for the other 8
+returned no Beyblade result, and news-notifier's 192 discovered ASINs contain
+none of them.
+
+### The cross-site naming problem — the barcode bridge WORKS
+
+Ginza names Beyblades with Hasbro's US-national-park codenames, so no name search
+can ever resolve its catalogue. `scripts/resolve_ginza.py` fixes that by reading
+the EAN off each product page and looking it up in `state/rarewaves.json`, whose
+ids ARE barcodes. **18 of Ginza's 21 products resolved** (2026-09-10):
+
+| Ginza calls it | it actually is |
+|---|---|
+| Bbx Kobuk Valley | Scale Shark 4-50UF |
+| Bbx Zion | Stun Medusa 9-60GB |
+| BBX Badlands | Rudder Phoenix 4-70LF |
+| Bbx Yellowstone | Ridge Triceratops 9-80GN |
+| BBX Big Bend | Feather Phoenix 2-60N |
+| Bbx Lake Clark | Shelter Drake 5-70O |
+| Bbx Gateway Arch | Flame Cerberus W 5-80WB |
+| Bbx Mammoth Cave | Circle Ghost 4-60LR & Hack Viking 4-55O |
+| Bbx Isle Royale | Calibur Samurai 6-70M & Obsidian Shell 3-85S |
+
+Three did not resolve — their barcodes are absent from rarewaves' catalogue:
+`5010996385550` (Haleakala), `5010996385123` (Customization Pack 2) and
+`5010996287373` (Beystadium V2, which rarewaves does list under a different
+barcode). A codename whose barcode nothing else sells is a genuinely unknown
+product, and worth watching for that reason.
+
+Exactly ONE wanted product is stocked at Ginza. The other 17 are real products,
+just not ones the user wants — which is a much better answer than "no matches".
+
+### Names vary more than expected — the full list
+
+Same product, per retailer: `Scale Shark 4-50UF` (Hasbro), `SharkScale 4-50UF`
+(the wiki), `Bbx Kobuk Valley` (Ginza), and on Amazon **`Bey Blade X`, as two
+words**. That last one matters: a filter requiring "beyblade" drops it. Amazon
+also had Sterling Wolf recorded in this config as "Silver Wolf", which was simply
+wrong — verified on the product page 2026-09-10 as Sterling Wolf 3-80FB
+(`B0DN6YLGRX`).
+
 ### The cross-site naming problem (unsolved)
 
 **The same product has a different NAME at every retailer**, and not as a
