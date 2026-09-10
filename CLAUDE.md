@@ -363,10 +363,18 @@ redone, and so nothing here gets "simplified" back out.
 
 **Where this project is now AHEAD of news-notifier — do not "restore" these:**
 
-- **The warm-up goes through `safe_goto`.** news-notifier's `open_market` uses
-  a bare `page.goto`, so a download prompt during warm-up loses the whole
-  market. Its `safe_goto` comment says every navigation must go through it;
-  its own warm-up does not.
+- **The warm-up goes through `safe_goto`.** news-notifier's `open_market` used
+  a bare `page.goto`, so a download prompt during warm-up lost the whole
+  market. Its `safe_goto` docstring says every navigation must go through it;
+  its own warm-up did not.
+  **PORTED BACK 2026-09-10 (news-notifier commit e083cea)** after the dashboard's
+  discovery panel exposed the cost: amazon.se returned "0 new of 0 found" on 23
+  runs against 150 good ones — roughly every other run — so NEW PRODUCTS ON .se
+  WERE MISSED HALF THE TIME, on the very channel that surfaced Seize Jaguar.
+  Verified on the VPS: a run that landed on `chrome-error://chromewebdata/`
+  recovered on retry 1/3 and returned 48 tiles, with `de` unaffected. Keep the
+  two copies in step — this bug was fixed here months before it was fixed there,
+  and nothing connected the two until an instrumentation panel did.
 - **Warm-up failure is recovered by replacing the PAGE**, not re-navigating
   it. A download-aborted navigation leaves the page at
   `chrome-error://chromewebdata/`, and re-issuing the goto on that same page
