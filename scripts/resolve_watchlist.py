@@ -63,7 +63,14 @@ NOISE = {
 
 # A title joining several products. Same signal tiers.py uses for pricing, and
 # it is why a "match" can be a 600 kr four-pack rather than the single.
-BUNDLE_JOIN = re.compile(r"\s(?:&|e|vs\.?|and|och)\s|\+", re.I)
+#
+# "and"/"och" are NOT in here, deliberately. Amazon's marketing titles say
+# "...Top and Launcher, ... Battle Tops and Games..." — two joins in a single
+# product's title — so counting them classified EVERY Amazon listing as a
+# bundle. That silently removed Amazon from the dashboard's cross-store price
+# comparison, which is the one place a 4x scalp is visible. Only "&", "vs" and
+# "+" actually join two products in these catalogues.
+BUNDLE_JOIN = re.compile(r"\s(?:&|vs\.?)\s|\+", re.I)
 
 
 def tokens(text: str) -> set[str]:
@@ -79,7 +86,11 @@ def looks_like_bundle(title: str, wanted_names: list[str]) -> bool:
     reliable half; the join pattern catches bundles of things we do not track.
     """
     hits = sum(1 for name in wanted_names if tokens(name) <= tokens(title))
-    return hits > 1 or len(BUNDLE_JOIN.findall(title or "")) >= 2
+    # ONE "&" or "vs" is enough now that "and" is gone: those genuinely join
+    # two products ("Circle Ghost 4-60LR & Hack Viking 4-55O", "Grogu 3-60F
+    # vs. Snowtrooper 3-80N"), whereas the old threshold of two let a
+    # two-item collab pack pass as a single.
+    return hits > 1 or len(BUNDLE_JOIN.findall(title or "")) >= 1
 
 
 def load_site_catalogue(state_dir: Path, site: str) -> dict[str, str]:

@@ -58,11 +58,30 @@ LOG_RUNS = 60          # how many recent runs to chart
 # The postcode identifies a town and the log prints it every run. This page sits
 # on public DNS behind basic_auth; personal data does not belong on it at all.
 POSTCODE_ENV = os.environ.get("DELIVERY_POSTCODE", "").strip()
-LOCATION_LINE = re.compile(r"(delivery location confirmed: )'[^']*'")
+
+# EVERY shape the destination appears in, because relying on the env var alone
+# already failed: cron does not source .env, so POSTCODE_ENV was empty and the
+# postcode reached a page on public DNS. Patterns are primary; the env value is
+# belt-and-braces for a shape not yet seen.
+REDACTIONS = (
+    # [se] delivery location confirmed: 'Karlskrona 371 16'
+    (re.compile(r"(delivery location confirmed:\s*)'[^']*'"), r"\1'[redacted]'"),
+    # ... widget reads 'Karlskrona 371 16', wanted Sweden/37116
+    (re.compile(r"(widget reads\s*)'[^']*'"), r"\1'[redacted]'"),
+    (re.compile(r"(wanted\s+)[A-Za-z]+/\S+"), r"\1[redacted]"),
+    # Any bare Swedish postcode, with or without its space.
+    (re.compile(r"\b\d{3}\s?\d{2}\b(?=[^\d]|$)"), "[redacted]"),
+)
 
 
 def redact(text: str) -> str:
-    text = LOCATION_LINE.sub(r"\1'[redacted]'", text)
+    """Strip the delivery destination from anything rendered.
+
+    The postcode identifies a town. This page is on public DNS behind basic
+    auth; personal data should not be on it at all, auth or no auth.
+    """
+    for pattern, replacement in REDACTIONS:
+        text = pattern.sub(replacement, text)
     if POSTCODE_ENV:
         text = text.replace(POSTCODE_ENV, "[redacted]")
         text = text.replace(POSTCODE_ENV.replace(" ", ""), "[redacted]")
