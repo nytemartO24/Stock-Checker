@@ -142,7 +142,7 @@ ALERT_LINE = re.compile(r"^(\S+) \[INFO\] ALERT:\s*$")
 # NOT anchored at line start: these lines carry the log prefix
 # ("2026-09-09T19:41:11 [INFO]   se  1 new of 48 found"), and anchoring
 # silently matched nothing at all — the table just never appeared.
-DISCOVERY_LINE = re.compile(r"([a-z]{2})\s+(\d+) new of (\d+) found")
+DISCOVERY_LINE = re.compile(r"([a-z]{2})\s+(\d+) new of (\d+) found")
 
 
 def read_discovery(path: Path, tail_bytes: int = 400_000) -> dict[str, list[int]]:
