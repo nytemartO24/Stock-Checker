@@ -114,7 +114,11 @@ def main(argv: list[str] | None = None) -> int:
                     # the caller must. Same failure as harvesting aggregator
                     # offers off unrelated products.
                     low = row["title"].lower()
-                    if "beyblade" not in low and "bbx" not in low:
+                    # "takara tomy" counts: amazon.se lists Blitz Bahamut as
+                    # "Takara Tomy BK1-50I CX-13 Starter Bahamut Blitz", with no
+                    # "beyblade" anywhere, and the first version of this guard
+                    # threw away that genuine hit.
+                    if not any(b in low for b in ("beyblade", "bbx", "takara tomy")):
                         continue
                     title_tokens = tokens(row["title"])
                     title_codes = {c.upper() for c in CODE.findall(row["title"].upper())}

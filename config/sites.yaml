@@ -51,15 +51,15 @@ sites:
     # "new" again. Set false if a store bulk-adding stock gets noisy.
     alert_on_new_products: true
     watchlist:
-      - beyblade-x-booster-scale-shark-450uf                # Scale Shark 4-50UF
-      - beyblade-x-starter-pack-sterling-wolf-380-fb-ux     # Sterling Wolf 3-80FB
-      - beyblade-x-starter-pack-reaper-incendio-t-470k-cx   # Reaper Incendio T 4-70K
-      # Handle does NOT contain the product name — this is Delta Unicorn PO
-      # 3-60GU. Proof that handles must be looked up, never derived.
-      - beyblade-x-starter-pack-guadalupe-mountains         # Delta Unicorn PO 3-60GU
-      # Tread Croc and Glare Cyclops are not stocked here, standalone or in a
-      # bundle, within the collections above.
-
+      # Derived from config/wanted_products.txt by scripts/resolve_watchlist.py.
+      # Do not hand-edit an identifier here: re-run the resolver instead, so the
+      # wanted list stays the single source of truth.
+      - beyblade-x-booster-cobalt-drake-4-60f                # Cobalt Drake 4-60F
+      - beyblade-x-starter-pack-sterling-wolf-380-fb-ux      # Sterling Wolf 3-80FB
+      - beyblade-x-booster-scale-shark-450uf                 # Shark Scale 4-50UF
+      - beyblade-x-booster-mirage-clock-9-65b                # Clock Mirage 9-65B
+      - beyblade-x-starter-pack-dark-perseus-b-680w-cx       # Perseus Dark 6-80W
+      - beyblade-x-starter-pack-reaper-incendio-t-470k-cx    # Reaper Incendio 4-70K
   amazon:
     type: amazon
     enabled: true
@@ -120,18 +120,22 @@ sites:
       set: 520          # observed 128-498
       accessory: 230    # observed 93-214
     watchlist:
-      - B0FCYT9DG6  # Shark Scale
-      - B0H1RKP3KL  # Tread Croc
-      - B0H1RFQ9L3  # Glare Cyclops
-      - B0DNFQ99JW  # Reaper Incendio
-      - B0DN6YLGRX  # Silver Wolf
-      - B0H95JF9D9  # Delta Unicorn
-      # Seize Jaguar HN UX Infinity Starter Pack. ONE ASIN, FOUR NAMES — amazon.se
-      # calls it "Hasbro BEY BBX Browns Canyon" (a Hasbro park codename, same
-      # family as ginza's "Bbx Kobuk Valley") while de/fr/es all spell out "Seize
-      # Jaguar HN UX". Verified 2026-09-09 to resolve on all four markets;
-      # currently unavailable on every one, which is the point of watching it.
-      - B0H1RB48HK  # Seize Jaguar HN UX  (= .se "Browns Canyon")
+      # Derived from config/wanted_products.txt by scripts/resolve_watchlist.py.
+      # Do not hand-edit an identifier here: re-run the resolver instead, so the
+      # wanted list stays the single source of truth.
+      #
+      # One ASIN covers se/de/fr/es. Only FIVE of the thirteen wanted products
+      # are listed on Amazon at all: searching amazon.se for the other eight
+      # returned no Beyblade result, and news-notifier's 192 discovered ASINs
+      # across four markets contain none of them either. They will arrive via
+      # its new-product discovery if Amazon ever stocks them.
+      - B0FCYT9DG6  # Shark Scale 4-50UF
+      - B0DN6YLGRX  # Sterling Wolf 3-80FB — VERIFIED; this entry used to say
+                    # "Silver Wolf", which was wrong. amazon.se titles it
+                    # "Bey Blade X Sterling Wolf", as two words.
+      - B0DNFQ99JW  # Reaper Incendio 4-70K
+      - B0H1RFQ9L3  # Glare Cyclops 7-55FB
+      - B0H1RB48HK  # Seize Jaguar HN UX — amazon.se calls it "BEY BBX Browns Canyon"
     rate_limit:
       # A browser page-load is far heavier than a JSON request, and this is
       # 24 of them per run (6 ASINs x 4 markets).
@@ -154,7 +158,18 @@ sites:
     # Watchlist entries are Ginza's own numeric product ids, visible in the
     # product URL: /product/<slug>/<id>/. Nothing here can be shared with
     # another store's list, because the names do not correspond.
-    watchlist: []
+    watchlist:
+      # Derived from config/wanted_products.txt by scripts/resolve_watchlist.py.
+      # Do not hand-edit an identifier here: re-run the resolver instead, so the
+      # wanted list stays the single source of truth.
+      #
+      # ONLY ONE wanted product is stocked here, and finding that out needed the
+      # barcode: Ginza names everything with Hasbro's US-national-park
+      # codenames, so no name search can ever match. scripts/resolve_ginza.py
+      # read the EAN off each product page and looked it up in rarewaves (whose
+      # ids ARE barcodes), resolving 18 of its 21 products. The other 17 are
+      # real products, just none the user wants.
+      - "952144"   # Shark Scale 4-50UF — Ginza calls it "BEYBLADE Bbx Kobuk Valley" (EAN 5010996385222)
     alert_on_new_products: true
     title_exclude:
       # Same back-catalogue pruning as the other stores. Checked against the
@@ -208,11 +223,14 @@ sites:
       - vforce            # 2  — anime DVD
       - backpack          # 1  — merchandise
     watchlist:
-      - beyblade-x-scale-shark-4-50uf-attack                            # Scale Shark 4-50UF
-      - beyblade-x-sterling-wolf-3-80-fb-ux-starter-pack                # Sterling Wolf 3-80FB
-      - beyblade-x-starter-pack-cx-reaper-incendio-t-4-70k-balance-type  # Reaper Incendio T
-      # Tread Croc, Delta Unicorn and Glare Cyclops are not stocked here at
-      # all — recorded so their absence reads as checked, not forgotten.
+      # Derived from config/wanted_products.txt by scripts/resolve_watchlist.py.
+      # Do not hand-edit an identifier here: re-run the resolver instead, so the
+      # wanted list stays the single source of truth.
+      - beyblade-x-sterling-wolf-3-80-fb-ux-starter-pack                  # Sterling Wolf 3-80FB
+      - beyblade-x-scale-shark-4-50uf-attack                              # Shark Scale 4-50UF
+      - beyblade-x-mirage-clock-9-65b-stamina                             # Clock Mirage 9-65B
+      - beyblade-x-dark-perseus-b-6-80w-cx-starter-pack                   # Perseus Dark 6-80W
+      - beyblade-x-starter-pack-cx-reaper-incendio-t-4-70k-balance-type   # Reaper Incendio 4-70K
     alert_on_new_products: true
     rate_limit:
       # HTML pages are heavier than a JSON call, and this is 4 of them.
@@ -241,10 +259,14 @@ sites:
     # here IS the barcode, so an entry can be derived from a barcode instead of
     # looked up by hand. Everywhere else this is impossible.
     watchlist:
-      - "5010996385222"  # Scale Shark 4-50UF          (= ginza "Bbx Kobuk Valley")
-      - "5010996385086"  # Reaper Rhino C 4-55D starter
-      - "5010996385321"  # Stun Medusa 9-60GB starter
-      - "5010996309457"  # Drop Attack Battle Set
+      # Derived from config/wanted_products.txt by scripts/resolve_watchlist.py.
+      # Do not hand-edit an identifier here: re-run the resolver instead, so the
+      # wanted list stays the single source of truth.
+      - "5010996309563"  # Sterling Wolf 3-80FB
+      - "5010996385222"  # Shark Scale 4-50UF
+      - "5010996404985"  # Clock Mirage 9-65B
+      - "5010996309471"  # Perseus Dark 6-80W
+      - "5010996309501"  # Reaper Incendio 4-70K
     alert_on_new_products: true
     title_exclude:
       # This store sells the anime on disc and the manga volumes next to the
@@ -326,29 +348,18 @@ sites:
     # "new" again. Set false if a store bulk-adding stock gets noisy.
     alert_on_new_products: true
     watchlist:
-      - beyblade-x-scale-shark-4-50uf-ux-booster-pack       # Scale Shark 4-50UF
-      # Bundles are watched deliberately: a 4-pack containing Tread Croc went
-      # by unnoticed once, which is part of why this project exists.
-      - beyblade-x-tread-croc-tq-5-50gn-cx-whip-brachio-ow-5-70nr-cx-nether-incendio-z-ux-suppress-superion-0-70lp-bx-infinity-starter-pack-bundle
-      # This one contains BOTH Delta Unicorn and Glare Cyclops.
-      - beyblade-x-delta-unicorn-po-3-60gu-cx-glory-valkerion-lf-ux-seize-jaguar-hn-ux-glare-cyclops-7-55fb-bx-infinity-starter-pack-bundle
-      # SINGLES of three watched products, which appeared here 2026-09-09 21:18
-      # and were caught by the new-product alert. Adding them is the point of
-      # that alert: it fires whatever the stock state, precisely so a product
-      # that shows up out of stock can be watchlisted BEFORE it returns —
-      # without an entry here a restock is silent, because `alertable` gates it.
-      #
-      # Tread Croc and Whip Brachio previously existed here ONLY inside the
-      # four-item bundle above. Tread Croc's single was in stock at 21:18 and
-      # sold out within minutes, which is the whole reason these are watched.
-      - beyblade-x-whip-brachio-ow-5-70nr-cx-infinity-starter-pack     # Whip Brachio OW 5-70NR
-      - beyblade-x-tread-croc-tq-5-50gn-cx-infinity-starter-pack       # Tread Croc TQ 5-50GN
-      - beyblade-x-delta-unicorn-po-3-60gu-cx-infinity-starter-pack    # Delta Unicorn PO 3-60GU
-    # This store has ONE beyblade collection, mixing product generations, so
-    # an unwanted line can only be dropped by title. EXCLUDE the old
-    # generation rather than trying to include the current one by name:
-    # "BBX" is Takara Tomy's branding for Beyblade X, so a `beyblade x`
-    # include-filter silently dropped a product that qualifies. Beyblade
-    # Burst is the only genuinely different line in here.
+      # Derived from config/wanted_products.txt by scripts/resolve_watchlist.py.
+      # Do not hand-edit an identifier here: re-run the resolver instead, so the
+      # wanted list stays the single source of truth.
+      - beyblade-x-suppress-superion-0-70lp-ux-infinity-starter-pack   # Suppress Superion 0-70LP
+      - beyblade-x-scale-shark-4-50uf-ux-booster-pack                  # Shark Scale 4-50UF
+      - beyblade-x-nether-incendio-z-ux-infinity-starter-pack          # Nether Incendio Z
+      - beyblade-x-whip-brachio-ow-5-70nr-cx-infinity-starter-pack     # Whip Brachio 5-70NR
+      # BUNDLES containing wanted products. Watched deliberately: at this store
+      # Tread Croc existed ONLY inside the first of these and one went by
+      # unnoticed, which is part of why this project exists.
+      - beyblade-x-tread-croc-tq-5-50gn-cx-whip-brachio-ow-5-70nr-cx-nether-incendio-z-ux-suppress-superion-0-70lp-bx-infinity-starter-pack-bundle  # Whip Brachio + Nether Incendio + Suppress Superion
+      - beyblade-x-delta-unicorn-po-3-60gu-cx-glory-valkerion-lf-ux-seize-jaguar-hn-ux-glare-cyclops-7-55fb-bx-infinity-starter-pack-bundle          # Seize Jaguar + Glare Cyclops
+      - beyblade-x-cobalt-drake-4-60f-mirage-clock-9-65b-shelter-drake-5-70o-ridge-triceratops-9-80gn-bundle                                          # Cobalt Drake + Clock Mirage
     title_exclude:
       - beyblade burst
