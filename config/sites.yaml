@@ -136,6 +136,14 @@ sites:
       - B0DNFQ99JW  # Reaper Incendio 4-70K
       - B0H1RFQ9L3  # Glare Cyclops 7-55FB
       - B0H1RB48HK  # Seize Jaguar HN UX — amazon.se calls it "BEY BBX Browns Canyon"
+      # Supplied by the user 2026-09-10 after news-notifier's discovery pinged it.
+      # The resolver had missed it only because it ran BEFORE that discovery
+      # landed — the ASIN is in products.txt now. Verified across markets:
+      # de is in stock ("Only 3 left") at EUR 41.97, which is ~3-4x the EUR 9.90
+      # popsplanet charges for the same booster, so expect the scalp flag.
+      # amazon.se lists it as "BEY Blade BBX Shenandoah" — another Hasbro park
+      # codename, and note "BEY Blade" as two words again.
+      - B0G4NFJJN1  # Cobalt Drake 4-60F  (= .se "BEY Blade BBX Shenandoah")
     rate_limit:
       # A browser page-load is far heavier than a JSON request, and this is
       # 24 of them per run (6 ASINs x 4 markets).

@@ -447,6 +447,52 @@ def panel_coverage(states: dict, wanted: list[str]) -> str:
                   "Coverage"], rows)
 
 
+def panel_amazon_discovery(sites_cfg: dict, wanted: list[str]) -> str:
+    """Wanted products whose ASIN news-notifier has discovered but we do not watch.
+
+    THE LOOP THIS CLOSES: Amazon new-product discovery lives in news-notifier,
+    and the hop from "it discovered an ASIN" to "we watch it" was a human
+    noticing a Discord ping and passing the ASIN along by hand — which is
+    exactly how Cobalt Drake (B0G4NFJJN1) got here. Its catalogue is on the same
+    box, so the comparison is free and the gap can simply be shown.
+    """
+    catalogues = resolver.load_amazon_catalogue(resolver.AMAZON_CATALOG)
+    if not catalogues:
+        return '<p class="empty">news-notifier catalogue not readable from here.</p>'
+    watched = {str(a).strip() for a in
+               (sites_cfg.get("amazon", {}).get("watchlist") or [])}
+    merged: dict[str, tuple[str, list[str]]] = {}
+    for market, catalogue in catalogues.items():
+        for asin, title in catalogue.items():
+            if asin in merged:
+                merged[asin][1].append(market)
+            else:
+                merged[asin] = (title, [market])
+
+    rows = []
+    for name in wanted:
+        learned = resolver.learn_codes(
+            {m: c for m, c in catalogues.items()}, name, wanted)
+        for asin, (title, markets) in sorted(merged.items()):
+            if asin in watched:
+                continue
+            need = resolver.tokens(name)
+            by_words = bool(need) and need <= resolver.tokens(title)
+            by_code = bool(learned) and bool(learned & resolver.codes(title))
+            if not (by_words or by_code):
+                continue
+            rows.append([
+                esc(name),
+                f'<code>{esc(asin)}</code>',
+                esc(",".join(sorted(markets))),
+                esc(title[:70]),
+                pill("not watchlisted", "warn"),
+            ])
+    return table(["Wanted product", "ASIN", "Seen on", "Discovered title",
+                  "Status"], rows,
+                 empty="Every discovered ASIN for a wanted product is watchlisted.")
+
+
 def panel_alerts(log: dict, now: datetime) -> str:
     rows = []
     for alert in reversed(log["alerts"][-40:]):
@@ -603,6 +649,12 @@ def render(out: Path, state_dir: Path, config_dir: Path, log_path: Path) -> None
               "only new-product discovery will ever surface them, so their silence "
               "should not be mistaken for tracking.",
               panel_coverage(states, wanted)),
+        panel("Amazon: discovered but not watchlisted",
+              "Amazon new-product discovery lives in news-notifier, and the hop "
+              "from 'it found an ASIN' to 'we watch it' was a human relaying a "
+              "Discord ping by hand — which is how Cobalt Drake arrived. Its "
+              "catalogue is on the same box, so the gap is simply shown here.",
+              panel_amazon_discovery(sites_cfg, wanted)),
         panel("Recent alerts", "What was actually sent, so noise can be judged.",
               panel_alerts(log, now)),
         panel("Warnings and errors",
