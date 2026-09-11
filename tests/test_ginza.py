@@ -106,3 +106,37 @@ def test_delivery_lead_time_is_carried_but_never_parsed_as_a_date(ginza_payload)
     assert carried, "fixture should include at least one delivery lead time"
     for r in carried:
         assert isinstance(r.delivery_date, str)
+
+
+class TestCompletenessGuard:
+    """Same guard as rarewaves, where a short page cost 12 false 'new' alerts.
+
+    Latent here — 22 products fit one 60-item page — but the failure shape is
+    identical: fewer records than the API promised is a PARTIAL view, and
+    main.py prunes state against any run reporting no errors.
+    """
+
+    def _payload(self, count, total):
+        return {"Products": [{"ProductIdentifier": str(i),
+                              "ProductTitle": f"BEYBLADE Bbx Thing {i}",
+                              "ProductPrice": "<strong>169 kr</strong>",
+                              "BuyButtonHtml": "btn-add-to-cart",
+                              "ProductUrl": f"/product/{i}/"} for i in range(count)],
+                "totalCount": total}
+
+    def test_short_result_set_marks_the_run_incomplete(self):
+        checker = _checker(FakeClient([self._payload(10, 22)]))
+        assert len(list(checker.check())) == 10
+        assert checker.errors > 0, "a partial view must not look like a clean run"
+
+    def test_complete_result_set_is_not_flagged(self):
+        checker = _checker(FakeClient([self._payload(22, 22)]))
+        assert len(list(checker.check())) == 22
+        assert checker.errors == 0
+
+    def test_missing_total_does_not_invent_an_error(self):
+        payload = self._payload(5, None)
+        payload.pop("totalCount")
+        checker = _checker(FakeClient([payload]))
+        list(checker.check())
+        assert checker.errors == 0

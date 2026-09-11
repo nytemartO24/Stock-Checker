@@ -96,6 +96,7 @@ class GinzaChecker(SiteChecker):
     def check(self) -> Iterator[StockResult]:
         seen: set[str] = set()
         total = None
+        fetched = 0
         for page in range(1, MAX_PAGES + 1):
             url, headers = self._request(page)
             try:
@@ -118,7 +119,11 @@ class GinzaChecker(SiteChecker):
                     logger.warning("[%s] no products returned — Referer/term mismatch, or "
                                    "the endpoint changed. NOT treating this as an empty "
                                    "catalogue.", self.name)
-                return
+                # A later empty page falls through to the completeness check
+                # below rather than returning silently.
+                break
+
+            fetched += len(products)
 
             for product in products:
                 try:
@@ -139,6 +144,19 @@ class GinzaChecker(SiteChecker):
         else:
             self.errors += 1
             logger.warning("[%s] still full after %d pages — truncating", self.name, MAX_PAGES)
+
+        # Same completeness guard as rarewaves, and for the same reason: the API
+        # states a total, so returning fewer records than promised is a PARTIAL
+        # view, and main.py prunes state against a run that reports no errors.
+        # Latent here today — 22 products fit in one 60-item page — but the
+        # failure is identical and silent, and rarewaves proved what it costs:
+        # a transient short page pruned 12 entries, which the next run then
+        # re-alerted as brand new.
+        if total is not None and fetched < total:
+            self.errors += 1
+            logger.warning(
+                "[%s] INCOMPLETE: API reported %s result(s) but returned %d — "
+                "not pruning against a partial view", self.name, total, fetched)
 
         missing = self.watchlist - seen
         if missing and not self.errors:

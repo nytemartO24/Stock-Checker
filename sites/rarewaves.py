@@ -103,6 +103,7 @@ class RarewavesChecker(SiteChecker):
     def check(self) -> Iterator[StockResult]:
         seen: set[str] = set()
         total: int | None = None
+        fetched = 0
         for page in range(MAX_PAGES):
             try:
                 payload = self.client.post_json(KLEVU_URL, json=self._query(page * KLEVU_PAGE))
@@ -127,7 +128,12 @@ class RarewavesChecker(SiteChecker):
                     logger.warning("[%s] Klevu returned no records at all — key or host "
                                    "changed? NOT treating this as an empty catalogue.",
                                    self.name)
-                return
+                # A LATER empty page used to `return` here, silently, with
+                # errors still zero. The completeness check after the loop is
+                # what now catches it — see the comment there.
+                break
+
+            fetched += len(records)
 
             for record in records:
                 try:
@@ -148,6 +154,25 @@ class RarewavesChecker(SiteChecker):
         else:
             self.errors += 1
             logger.warning("[%s] still full after %d pages — truncating", self.name, MAX_PAGES)
+
+        # THE COMPLETENESS CHECK, and it is the important part of this module.
+        # Klevu states how many records exist; if we came back with fewer, this
+        # run is a PARTIAL view of the shop and must say so, because main.py
+        # prunes state against a clean run. On 2026-09-11 a transient short page
+        # returned 100 of 112 products, the run reported no errors, 12 entries
+        # were pruned, and the next run re-alerted every one of them as brand
+        # new. Twelve false "new product" pings from one flaky HTTP response.
+        #
+        # Only page 0's emptiness was treated as an error before; a short or
+        # empty LATER page ended the loop silently. Counting what arrived
+        # against what was promised covers every shape of that failure without
+        # having to guess which page went short.
+        if total is not None and fetched < total:
+            self.errors += 1
+            logger.warning(
+                "[%s] INCOMPLETE: Klevu promised %s record(s) but returned %d — "
+                "not pruning against a partial view (a short page here once cost "
+                "12 false 'new product' alerts)", self.name, total, fetched)
 
         missing = self.watchlist - seen
         if missing and not self.errors:

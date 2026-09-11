@@ -140,6 +140,16 @@ section once the real structure diverges intentionally.)
   — HTML for browser sites, JSON for API sites (don't hit the live site in
   tests).
 
+**A paginated source MUST prove it returned everything.** `errors` is what stops
+`main.py` pruning, and a short page is silent: it looks exactly like the end of
+the catalogue. On 2026-09-11 rarewaves' Klevu returned 100 of 112 products on one
+flaky run, reported no errors, had 12 entries pruned, and re-alerted all 12 as
+NEW products on the next run. Both Klevu and Ginza's Apptus state a total, so
+every paginated module compares what it fetched against that total and marks the
+run incomplete if it falls short. Guarding only the FIRST page — which is what
+both modules did — covers the "endpoint is dead" case and misses the far more
+common flaky-later-page one.
+
 `SiteChecker` also carries `state_dir` (for a site's own auxiliary state,
 which today means Amazon's reference prices) and `errors`, a count of what
 the run failed to see. A non-zero `errors` means the results are an
