@@ -329,7 +329,12 @@ sites:
       - "5010996431134"  # Fig Beyblade X Guadalupe Mountains = Delta Unicorn PO 3-60GU
       - "5010996431189"  # Fig Beyblade X Great Sand Dunes
       - "5010996438584"  # Fig Beyblade X Great Smokey Mountains
-      - "5010996309518"  # Starter Pack Beyblade X Courage Dran S 6-60V CX
+      # 5010996309518 (Courage Dran S 6-60V CX) REMOVED 2026-09-12: verified gone
+      # from both the Hasbro category and the shop's own search, so it is
+      # delisted rather than merely out of stock. A watchlist entry matching
+      # nothing warns once per run — 47 warnings in a day — and that noise is
+      # the mechanism working, not a reason to ignore it. If it returns, the
+      # new-product alert will say so.
     alert_on_new_products: true
     rate_limit:
       # Two page loads per run against a small shop.
