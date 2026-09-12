@@ -96,4 +96,8 @@ def test_prune_still_works_with_a_non_empty_view(tmp_path):
     state = SiteState(path)
     for i in range(3):
         state.record(StockResult(f"se:A{i}", f"A{i}", "https://x.test", True))
+    # Two calls: prune() now requires an absence to persist for a second run
+    # before deleting, because deleting on the first miss caused two alert
+    # storms. The orphan-cleanup intent this test guards is unchanged.
+    assert state.prune({"se:A0"}) == 0
     assert state.prune({"se:A0"}) == 2

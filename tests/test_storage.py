@@ -61,10 +61,17 @@ def test_unalertable_result_is_never_notified(tmp_path):
 
 
 def test_prune_drops_unwatched_entries(tmp_path):
+    """Pruning still removes orphans — but only once an absence is confirmed.
+
+    Updated deliberately when prune() gained its grace period: deleting on the
+    FIRST missed run is what caused two alert storms (a short API page, then a
+    flickering search index), so one absence now marks and the second removes.
+    """
     path = tmp_path / "s.json"
     state = SiteState(path)
     state.record(result("keep"))
     state.record(result("drop"))
+    assert state.prune({"keep"}) == 0, "one missed run is not evidence of delisting"
     assert state.prune({"keep"}) == 1
     state.save()
     assert set(json.loads(path.read_text(encoding="utf-8"))) == {"keep"}
@@ -132,3 +139,61 @@ def test_a_product_is_new_exactly_once(tmp_path):
     second.save()
 
     assert SiteState(path).alert_kind(fresh) is None
+
+
+class TestPruneGracePeriod:
+    """A product missing for ONE run is not delisted.
+
+    Both of this project's alert storms came from deleting on first absence:
+    rarewaves' short page pruned 12 entries which then re-alerted as new, and
+    two products that flicker inside Klevu's own index repeated it a day later.
+    The second case cannot be caught by the site module — the API's total drops
+    in step with the records — so the guard has to live here.
+    """
+
+    def _result(self, product_id="p1", in_stock=True):
+        from sites.base import StockResult
+        return StockResult(product_id=product_id, product_name="Thing",
+                           url="https://example.test/p", in_stock=in_stock)
+
+    def _state(self, tmp_path):
+        from core.storage import SiteState
+        state = SiteState(tmp_path / "s.json")
+        for pid in ("p1", "p2", "p3"):
+            state.record(self._result(pid))
+        return state
+
+    def test_first_absence_does_not_delete(self, tmp_path):
+        state = self._state(tmp_path)
+        removed = state.prune({"p1", "p2"})
+        assert removed == 0
+        assert "p3" in state._entries, "one missed run must not delete a product"
+
+    def test_second_consecutive_absence_deletes(self, tmp_path):
+        state = self._state(tmp_path)
+        state.prune({"p1", "p2"})
+        removed = state.prune({"p1", "p2"})
+        assert removed == 1
+        assert "p3" not in state._entries
+
+    def test_reappearing_clears_the_counter(self, tmp_path):
+        # THE FLICKER CASE: gone, back, gone again must never accumulate into a
+        # deletion, or a product that blinks every other run dies eventually.
+        state = self._state(tmp_path)
+        state.prune({"p1", "p2"})          # p3 missing once
+        state.record(self._result("p3"))   # seen again
+        state.prune({"p1", "p2", "p3"})
+        assert state._entries["p3"].get("missing_runs") is None
+        state.prune({"p1", "p2"})          # missing once more, from zero
+        assert "p3" in state._entries
+
+    def test_a_product_still_absent_is_eventually_removed(self, tmp_path):
+        state = self._state(tmp_path)
+        for _ in range(3):
+            state.prune({"p1"})
+        assert set(state._entries) == {"p1"}
+
+    def test_empty_view_still_refuses(self, tmp_path):
+        state = self._state(tmp_path)
+        assert state.prune(set()) == 0
+        assert len(state._entries) == 3

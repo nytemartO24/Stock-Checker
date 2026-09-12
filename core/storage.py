@@ -103,12 +103,26 @@ class SiteState:
             "last_seen": _utc_now(),
         }
 
-    def prune(self, keep: set[str]) -> int:
-        """Drop entries no longer being watched.
+    def prune(self, keep: set[str], *, grace_runs: int = 1) -> int:
+        """Drop entries no longer being watched, but only after `grace_runs`.
 
         news-notifier's live state carried 22-24 entries against a 6-ASIN
         whitelist — orphans from earlier iterations, growing unbounded and
         carrying stale prices. Cheap to prevent, tedious to clean up later.
+
+        A PRODUCT MISSING FOR ONE RUN IS NOT DELISTED. Deleting on first sight
+        of an absence is what produced this project's two worst alert storms:
+        rarewaves returned a short page and 12 entries were pruned, then
+        re-alerted as brand new on the next run; and two products that flicker
+        in and out of Klevu's own index did the same thing again a day later —
+        that second case is invisible to the site module's completeness check,
+        because the API's total drops in step with the records it returns.
+
+        So absence must be CORROBORATED before it is acted on, the same rule
+        the scalp reference already follows for prices. A product still gone on
+        the next run is genuinely gone and gets pruned then; a one-run blip
+        costs nothing but a log line. The cost of waiting is one extra run of a
+        stale entry, against a false "new product" alert for every item lost.
         """
         if not keep and self._entries:
             # Seeing nothing at all is a failure signature, not evidence
@@ -120,12 +134,33 @@ class SiteState:
                 self.path.name, len(self._entries),
             )
             return 0
-        stale = set(self._entries) - keep
-        for product_id in stale:
-            del self._entries[product_id]
-        if stale:
-            logger.info("%s: pruned %d entry/entries no longer watched", self.path.name, len(stale))
-        return len(stale)
+
+        pruned, pending = 0, []
+        for product_id in list(self._entries):
+            entry = self._entries[product_id]
+            if product_id in keep:
+                # Seen again: forget any absence, so a product that flickers
+                # never accumulates its way to deletion.
+                entry.pop("missing_runs", None)
+                continue
+            misses = int(entry.get("missing_runs", 0)) + 1
+            if misses > grace_runs:
+                del self._entries[product_id]
+                pruned += 1
+            else:
+                entry["missing_runs"] = misses
+                pending.append(product_id)
+
+        if pending:
+            logger.info(
+                "%s: %d entry/entries missing this run — NOT pruning yet, waiting for "
+                "a second run to confirm (%s)", self.path.name, len(pending),
+                ", ".join(sorted(pending)[:5]),
+            )
+        if pruned:
+            logger.info("%s: pruned %d entry/entries missing for more than %d run(s)",
+                        self.path.name, pruned, grace_runs)
+        return pruned
 
     def save(self) -> None:
         """Write atomically — a crash mid-write must not corrupt the file."""

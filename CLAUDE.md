@@ -140,6 +140,16 @@ section once the real structure diverges intentionally.)
   — HTML for browser sites, JSON for API sites (don't hit the live site in
   tests).
 
+**A product missing for ONE run is not delisted.** `SiteState.prune()` marks an
+absence and deletes only if it persists into the next run. Deleting on first
+sight caused both of this project's alert storms: rarewaves' short API page
+pruned 12 products which then re-alerted as new, and two products that flicker
+inside Klevu's own INDEX did it again a day later — that second case is
+invisible to any site-level completeness check, because the API's stated total
+drops in step with the records it returns. The cost of waiting is one extra run
+of a stale entry; the cost of not waiting is a false "new product" alert per
+item. Same corroborate-before-acting rule the scalp reference already follows.
+
 **A paginated source MUST prove it returned everything.** `errors` is what stops
 `main.py` pruning, and a short page is silent: it looks exactly like the end of
 the catalogue. On 2026-09-11 rarewaves' Klevu returned 100 of 112 products on one

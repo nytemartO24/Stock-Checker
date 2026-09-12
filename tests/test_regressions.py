@@ -51,7 +51,12 @@ def test_partial_run_does_not_prune(monkeypatch, tmp_path):
     _run(monkeypatch, tmp_path, StubChecker([R("p1"), R("p2")], errors=1))
     assert set(json.loads(state_file.read_text(encoding="utf-8"))) == {"p1", "p2", "p3", "p4"}
 
-    # And a clean run still prunes genuinely-gone products.
+    # And genuinely-gone products are still pruned — after a SECOND clean run
+    # confirms the absence. One missed run is not evidence of delisting: that
+    # assumption pruned 12 rarewaves products on a short API page, and 2 more
+    # when its search index briefly dropped them, each then re-alerting as new.
+    _run(monkeypatch, tmp_path, StubChecker([R("p1"), R("p2")]))
+    assert set(json.loads(state_file.read_text(encoding="utf-8"))) == {"p1", "p2", "p3", "p4"}
     _run(monkeypatch, tmp_path, StubChecker([R("p1"), R("p2")]))
     assert set(json.loads(state_file.read_text(encoding="utf-8"))) == {"p1", "p2"}
 
