@@ -19,6 +19,7 @@ once in this project:
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import re
 import subprocess
@@ -62,10 +63,40 @@ def check(label: str, passed: bool, detail: str = "") -> None:
 
 
 def tail_lines(path: Path, cutoff: str, max_bytes: int = 8_000_000) -> list[str]:
+    """Lines at or after `cutoff`, INCLUDING the rotated logs the window spans.
+
+    Reading only the live file makes this audit cry wolf the morning after a
+    weekly rotation: 17 runs are visible instead of 48, so "run cadence" fails
+    while "no skipped slots" passes in the same breath — a contradiction that
+    is the audit's fault, not the deployment's. An audit that reports a
+    failure which isn't one teaches you to skim its output, which is exactly
+    how the real lereservoir warning went unnoticed for a day.
+    """
     if not path.exists():
         return []
+
+    chunks: list[str] = []
     data = path.read_bytes()[-max_bytes:]
-    lines = data.decode("utf-8", "replace").splitlines()
+    chunks.append(data.decode("utf-8", "replace"))
+
+    # logrotate leaves foo.log.1.gz, foo.log.2.gz ... oldest last. Walk back
+    # only as far as the window needs: stop at the first archive that begins
+    # before the cutoff, since everything older is out of the window anyway.
+    for index in range(1, 6):
+        if chunks[-1][:19] <= cutoff:
+            break
+        archive = path.with_name(f"{path.name}.{index}.gz")
+        if not archive.exists():
+            break
+        try:
+            with gzip.open(archive, "rt", encoding="utf-8", errors="replace") as handle:
+                chunks.append(handle.read()[-max_bytes:])
+        except OSError:
+            break
+
+    lines: list[str] = []
+    for chunk in reversed(chunks):
+        lines.extend(chunk.splitlines())
     return [ln for ln in lines if ln[:19] >= cutoff]
 
 
