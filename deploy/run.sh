@@ -31,7 +31,12 @@ shift
 # file.
 #
 # The key includes the ARGS, not just the script, so `--site amazon` and
-# `--site popsplanet` can overlap freely: they touch different state.
+# `--site rarewaves` can overlap freely: they touch different state.
+#
+# NOTE the sharp edge: `main.py --site amazon` and `main.py --send-discord`
+# hash to DIFFERENT keys and so do NOT lock each other out, while both write
+# state/amazon.json. Check `pgrep -f 'python main.py'` before running one by
+# hand.
 lock_key="$(printf '%s' "$script $*" | tr -c 'A-Za-z0-9' '-')"
 lock_file="/tmp/stock-checker-${lock_key}.lock"
 exec 9>"$lock_file"

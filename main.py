@@ -8,7 +8,7 @@ path — two implementations of "check everything" would drift.
 Usage:
     python main.py                    # dry run: logs what it would send
     python main.py --send-discord     # actually notify
-    python main.py --site popsplanet  # one site only
+    python main.py --site amazon      # one site only
 """
 
 from __future__ import annotations

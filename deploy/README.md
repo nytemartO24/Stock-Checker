@@ -79,7 +79,7 @@ yourself:
 
 ```bash
 ssh vps 'cd /root/stock-checker && set -a && . .env && set +a && \
-  ./.venv/bin/python main.py --site popsplanet'
+  ./.venv/bin/python main.py --site amazon'
 ```
 
 Always dry-run first against production. Adding `--send-discord` to a manual
