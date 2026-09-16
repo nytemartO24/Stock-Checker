@@ -132,4 +132,20 @@ CLAUDE.md and trim this file.
 - "This run saw fewer products than last run" is not something the checker can notice on its own, because each run is judged in isolation. Any paginated source must therefore carry its own completeness proof; a count from the API is the cheapest one available and both Klevu and Apptus provide it.
 - The completeness guard closed the short-page hole but not the next one: two rarewaves products flicker inside Klevu's own index, and its reported total drops with them, so fetched == total and the run looks clean. They were pruned and re-alerted as new a day after the first fix. A site module cannot detect this; the guard has to be "do not act on a single absence", which now lives in SiteState.prune().
 - Fixing one instance of a bug class is not fixing the class. The warm-up fix cut amazon.se discovery failures from 23-in-173 to 2-in-41, and the survivors had a DIFFERENT signature in the same log — warm-up fine, location modal failing, empty search reading as "no new products". news-notifier had never received the modal-retry fix that Stock Checker made the day before. Port the whole family, or re-audit after.
-
+- 2026-09-16: Amazon coverage looked half-done and was not — the CHECKER always
+  visited every market for every ASIN, but `resolve_watchlist.py` matched each
+  market's catalogue separately, so an ASIN discovered only on .de reported as
+  four misses. When a user says a system covers only part of something, check
+  what the REPORTING says before changing the mechanism; here the mechanism was
+  right and the readout was lying.
+- 2026-09-16: hard-coding `AMAZON_MARKETS` next to a `markets:` config key meant
+  adding amazon.it would have extended the checker and silently not the
+  resolver. A constant that duplicates config is a divergence waiting to happen.
+- 2026-09-16: merging per-market Amazon titles down to one "best" title before
+  learning model codes would have lost 3-80FB whenever the market that prints
+  the code is not the market with the longest marketing copy. Merge for IDENTITY
+  (the ASIN), never for the text you still need to search.
+- 2026-09-16: two rules that must agree had drifted apart — a delivery date
+  beyond `max_delivery_days` marked the listing unavailable while its
+  moved-earlier alert still fired every time. Fixed by extracting one predicate
+  (`beyond_window`) both call, rather than repeating the comparison.

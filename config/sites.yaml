@@ -20,52 +20,18 @@ defaults:
     max_retries: 3
 
 sites:
-  popsplanet:
-    type: shopify
-    enabled: true
-    domain: www.popsplanet.it
-    # Locale prefix this store serves its English catalogue under.
-    base_path: /en
-    country: SE
-    # Single-market store: verified to quote EUR regardless of country.
-    currency: EUR
-    currency_symbol: "€"
-    collections:
-      - beyblade-x-booster
-      - beyblade-x-starter-pack
-      - beyblade-x-double-pack
-    # Terms identifying the products worth NOTIFYING about. Everything in
-    # the collections above is still tracked (one request covers the whole
-    # collection, so it is free, and it keeps price history plus a
-    # first_seen date for spotting newcomers) — this only decides what may
-    # interrupt you. EMPTY MEANS EVERYTHING.
-    #
-    # Entries are exact product HANDLES (slugs), not title terms. Title
-    # matching was tried and dropped: names are not word-order stable (the
-    # item quoted as "Shark Scale" is titled "Scale Shark 4-50UF") and a term
-    # also matches bundles merely containing the product. Look a handle up
-    # with: scripts/audit_store.py <store> --find "<term>"
-    # A product never seen before alerts ONCE, regardless of the watchlist —
-    # you cannot watchlist something that does not exist yet, which is how a
-    # four-item bundle was missed. It is recorded on that run, so it is never
-    # "new" again. Set false if a store bulk-adding stock gets noisy.
-    alert_on_new_products: true
-    watchlist:
-      # Derived from config/wanted_products.txt by scripts/resolve_watchlist.py.
-      # Do not hand-edit an identifier here: re-run the resolver instead, so the
-      # wanted list stays the single source of truth.
-      - beyblade-x-booster-cobalt-drake-4-60f                # Cobalt Drake 4-60F
-      - beyblade-x-starter-pack-sterling-wolf-380-fb-ux      # Sterling Wolf 3-80FB
-      - beyblade-x-booster-scale-shark-450uf                 # Shark Scale 4-50UF
-      - beyblade-x-booster-mirage-clock-9-65b                # Clock Mirage 9-65B
-      - beyblade-x-starter-pack-dark-perseus-b-680w-cx       # Perseus Dark 6-80W
-      - beyblade-x-starter-pack-reaper-incendio-t-470k-cx    # Reaper Incendio 4-70K
   amazon:
     type: amazon
     enabled: true
-    # Matches the news-notifier pilot's production markets. nl/be/it/pl are
-    # supported in markets.py and can be added by name.
-    markets: [se, de, fr, es]
+    # EVERY market listed here is checked for EVERY ASIN below - all of them,
+    # always, whatever the local page looks like. An ASIN is the same physical
+    # product on every Amazon domain, so a market is never skipped because its
+    # listing is titled differently, is missing, or redirects elsewhere: that
+    # IS the answer we are asking for, and skipping it is how a restock on one
+    # domain goes unnoticed. tests/test_amazon_markets.py locks this down.
+    #
+    # nl/be/pl are supported in markets.py too and can be added by name.
+    markets: [se, de, fr, es, it]
     # Where deliveries are quoted TO. Every market is pinned to this one
     # destination so their answers mean the same thing — without it Amazon
     # geolocates a different country per marketplace and the results stop
@@ -82,7 +48,11 @@ sites:
     # date coming inside the window reads as a normal restock and you are told
     # when the item becomes actually available. The listing still reports its
     # real date, and the alert says plainly that it was orderable but too far
-    # out. Set to 0 or remove to disable.
+    # out. It also gags the date-moved-earlier ping while the date is outside
+    # it: a release date walking from June to March is not news when you cannot
+    # have the thing either way. The move is still recorded, so the step that
+    # finally brings the date INSIDE this window does alert.
+    # Set to 0 or remove to disable.
     max_delivery_days: 90
     # How many days earlier a delivery estimate must move before it pings.
     # Amazon nudges its estimates by a day constantly, so a low value here is
@@ -94,8 +64,11 @@ sites:
     # Scalping on this line runs 4-5x, so 2.0 has plenty of margin.
     scalp_multiplier: 2.0
     # false = suppress the notification instead of tagging it. Detection,
-    # logging and state recording continue either way.
-    alert_on_suspected_scalp: true
+    # logging and state recording continue either way, so the dashboard and
+    # the log still show the price and the flag - it just does not interrupt
+    # you. Turned OFF 2026-09-16: a 4x listing is not news, it is the normal
+    # state of this product line, and the ping was pure noise.
+    alert_on_suspected_scalp: false
     headless: true
     # Optional per-ASIN ceilings in SEK, for products where the automatic
     # reference misbehaves. Deliberately empty: auto-reference first.
@@ -124,34 +97,31 @@ sites:
       # Do not hand-edit an identifier here: re-run the resolver instead, so the
       # wanted list stays the single source of truth.
       #
-      # One ASIN covers se/de/fr/es. Only FIVE of the thirteen wanted products
-      # are listed on Amazon at all: searching amazon.se for the other eight
-      # returned no Beyblade result, and news-notifier's 192 discovered ASINs
-      # across four markets contain none of them either. They will arrive via
-      # its new-product discovery if Amazon ever stocks them.
+      # ONE ASIN, EVERY DOMAIN. Each of these is checked on all five markets
+      # above — the same ten characters is the same physical product whichever
+      # Amazon serves it, so which market's crawler first surfaced it decides
+      # nothing. B0FCYT9DG6 was only ever discovered on .se and is checked on
+      # .de/.fr/.es/.it all the same.
+      #
+      # All five wanted products are listed on Amazon, and all five are here.
       - B0FCYT9DG6  # Shark Scale 4-50UF
-      - B0DN6YLGRX  # Sterling Wolf 3-80FB — VERIFIED; this entry used to say
-                    # "Silver Wolf", which was wrong. amazon.se titles it
-                    # "Bey Blade X Sterling Wolf", as two words.
-      - B0DNFQ99JW  # Reaper Incendio 4-70K
+      - B0DN6YLGRX  # Sterling Wolf 3-80FB — VERIFIED BY HAND; this entry used to
+                    # say "Silver Wolf", which was wrong. amazon.se titles it
+                    # "Bey Blade X Sterling Wolf", as two words. NOT in
+                    # news-notifier's discovery catalogue, so the resolver
+                    # cannot propose it — do not drop it because a resolver run
+                    # came back without it.
+      - B0DNFQ99JW  # Reaper Incendio 4-70K — likewise hand-verified and absent
+                    # from discovery.
       - B0H1RFQ9L3  # Glare Cyclops 7-55FB
       - B0H1RB48HK  # Seize Jaguar HN UX — amazon.se calls it "BEY BBX Browns Canyon"
-      # Supplied by the user 2026-09-10 after news-notifier's discovery pinged it.
-      # The resolver had missed it only because it ran BEFORE that discovery
-      # landed — the ASIN is in products.txt now. Verified across markets:
-      # de is in stock ("Only 3 left") at EUR 41.97, which is ~3-4x the EUR 9.90
-      # popsplanet charges for the same booster, so expect the scalp flag.
-      # amazon.se lists it as "BEY Blade BBX Shenandoah" — another Hasbro park
-      # codename, and note "BEY Blade" as two words again.
-      - B0G4NFJJN1  # Cobalt Drake 4-60F  (= .se "BEY Blade BBX Shenandoah")
-      # Supplied by the user 2026-09-10. Verified on all four markets, and it
-      # shows a naming variant the codenames had not: amazon.es TRANSLATES the
-      # product name to "Nether FIRE Z UX" while fr keeps "Nether Incendio".
-      # So a name can differ by codename (se), by language (es), or by word
-      # order — three independent ways, which is why watchlists are identifiers.
-      # Unavailable everywhere; last-known prices range EUR 9.99 (de/es) to
-      # kr 720.98 (se), the latter a stale scalp listing.
-      - B0H1RKKYHC  # Nether Incendio Z UX  (= .se "BEY BBX Mill Springs", .es "Nether Fire")
+      # ORDERED 2026-09-16 and dropped from the watchlist: B0G4NFJJN1 (Cobalt
+      # Drake 4-60F, = .se "BEY Blade BBX Shenandoah") and B0H1RKKYHC (Nether
+      # Incendio Z UX, = .se "BEY BBX Mill Springs", = .es "Nether Fire").
+      # Kept as a note because between them they are the record of THREE
+      # independent ways an Amazon title can differ from the name you know:
+      # by park codename (se), by language (es translates it), and by word
+      # order. That is why every watchlist here is identifiers, never names.
     rate_limit:
       # A browser page-load is far heavier than a JSON request, and this is
       # 24 of them per run (6 ASINs x 4 markets).
@@ -244,9 +214,8 @@ sites:
       # wanted list stays the single source of truth.
       - beyblade-x-sterling-wolf-3-80-fb-ux-starter-pack                  # Sterling Wolf 3-80FB
       - beyblade-x-scale-shark-4-50uf-attack                              # Shark Scale 4-50UF
-      - beyblade-x-mirage-clock-9-65b-stamina                             # Clock Mirage 9-65B
-      - beyblade-x-dark-perseus-b-6-80w-cx-starter-pack                   # Perseus Dark 6-80W
       - beyblade-x-starter-pack-cx-reaper-incendio-t-4-70k-balance-type   # Reaper Incendio 4-70K
+      # Clock Mirage and Perseus Dark dropped 2026-09-16 — both ordered.
     alert_on_new_products: true
     rate_limit:
       # HTML pages are heavier than a JSON call, and this is 4 of them.
@@ -280,9 +249,9 @@ sites:
       # wanted list stays the single source of truth.
       - "5010996309563"  # Sterling Wolf 3-80FB
       - "5010996385222"  # Shark Scale 4-50UF
-      - "5010996404985"  # Clock Mirage 9-65B
-      - "5010996309471"  # Perseus Dark 6-80W
       - "5010996309501"  # Reaper Incendio 4-70K
+      # Clock Mirage (5010996404985) and Perseus Dark (5010996309471) dropped
+      # 2026-09-16 — both ordered.
     alert_on_new_products: true
     title_exclude:
       # This store sells the anime on disc and the manga volumes next to the
@@ -325,16 +294,25 @@ sites:
       - beyblade
     # WATCHLIST ENTRIES ARE EANs — the tile's own id is the barcode, and it
     # repeats in the product URL. Same as rarewaves, unlike everywhere else.
-    watchlist:
-      - "5010996431134"  # Fig Beyblade X Guadalupe Mountains = Delta Unicorn PO 3-60GU
-      - "5010996431189"  # Fig Beyblade X Great Sand Dunes
-      - "5010996438584"  # Fig Beyblade X Great Smokey Mountains
-      # 5010996309518 (Courage Dran S 6-60V CX) REMOVED 2026-09-12: verified gone
-      # from both the Hasbro category and the shop's own search, so it is
-      # delisted rather than merely out of stock. A watchlist entry matching
-      # nothing warns once per run — 47 warnings in a day — and that noise is
-      # the mechanism working, not a reason to ignore it. If it returns, the
-      # new-product alert will say so.
+    #
+    # DELIBERATELY EMPTY since 2026-09-16, which here means "everything" — and
+    # everything is three products. This shop stocks NONE of the five wanted
+    # Beyblades, so the alternative was listing three barcodes it has never
+    # carried, which would warn "matched no product" on every single run, 48
+    # times a day, for no information. With only three tiles behind
+    # `title_include: beyblade`, empty and fully-listed behave identically
+    # anyway: the three are Guadalupe Mountains (= Delta Unicorn PO 3-60GU),
+    # Great Sand Dunes and Great Smokey Mountains.
+    #
+    # The store is kept because of what it is FOR: it is the one find from the
+    # OpenStreetMap harvest that ever mattered, and its value now is
+    # new-product discovery — a wanted Beyblade appearing here would alert as
+    # new, which no watchlist could have anticipated.
+    #
+    # 5010996309518 (Courage Dran S 6-60V CX) was removed 2026-09-12 for
+    # exactly the warning reason above: verified gone from both the Hasbro
+    # category and the shop's own search, so delisted rather than out of stock.
+    watchlist: []
     alert_on_new_products: true
     rate_limit:
       # Two page loads per run against a small shop.
@@ -372,15 +350,15 @@ sites:
       # Derived from config/wanted_products.txt by scripts/resolve_watchlist.py.
       # Do not hand-edit an identifier here: re-run the resolver instead, so the
       # wanted list stays the single source of truth.
-      - beyblade-x-suppress-superion-0-70lp-ux-infinity-starter-pack   # Suppress Superion 0-70LP
       - beyblade-x-scale-shark-4-50uf-ux-booster-pack                  # Shark Scale 4-50UF
-      - beyblade-x-nether-incendio-z-ux-infinity-starter-pack          # Nether Incendio Z
-      - beyblade-x-whip-brachio-ow-5-70nr-cx-infinity-starter-pack     # Whip Brachio 5-70NR
-      # BUNDLES containing wanted products. Watched deliberately: at this store
-      # Tread Croc existed ONLY inside the first of these and one went by
-      # unnoticed, which is part of why this project exists.
-      - beyblade-x-tread-croc-tq-5-50gn-cx-whip-brachio-ow-5-70nr-cx-nether-incendio-z-ux-suppress-superion-0-70lp-bx-infinity-starter-pack-bundle  # Whip Brachio + Nether Incendio + Suppress Superion
+      # A BUNDLE containing wanted products. Watched deliberately: at this store
+      # Tread Croc existed ONLY inside a bundle and one went by unnoticed, which
+      # is part of why this project exists. This is the only bundle left that
+      # still carries something wanted — it holds Seize Jaguar AND Glare
+      # Cyclops, and neither is sold here on its own.
       - beyblade-x-delta-unicorn-po-3-60gu-cx-glory-valkerion-lf-ux-seize-jaguar-hn-ux-glare-cyclops-7-55fb-bx-infinity-starter-pack-bundle          # Seize Jaguar + Glare Cyclops
-      - beyblade-x-cobalt-drake-4-60f-mirage-clock-9-65b-shelter-drake-5-70o-ridge-triceratops-9-80gn-bundle                                          # Cobalt Drake + Clock Mirage
+      # Dropped 2026-09-16, all ordered: Suppress Superion, Nether Incendio,
+      # Whip Brachio, and the two bundles whose only wanted contents were
+      # those three plus Cobalt Drake and Clock Mirage.
     title_exclude:
       - beyblade burst

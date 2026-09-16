@@ -41,7 +41,6 @@ ROOT = Path(__file__).resolve().parent.parent
 # only the ASINs already watched, never a catalogue, so it is resolved from
 # news-notifier's discovery output instead (see AMAZON_CATALOG).
 SITE_IDENTIFIERS = {
-    "popsplanet": "Shopify handle",
     "toysnowman": "Shopify handle",
     "gameshop": "WooCommerce slug",
     "ginza": "Ginza numeric id",
@@ -50,7 +49,25 @@ SITE_IDENTIFIERS = {
 }
 
 AMAZON_CATALOG = Path("/root/news-notifier/pilot/eu_multimarket/state")
-AMAZON_MARKETS = ("se", "de", "fr", "es")
+
+# Fallback only. The real list is whatever `markets:` says in sites.yaml, read
+# by amazon_markets() below — hard-coding it here is how adding a market to the
+# config quietly failed to extend discovery with it.
+DEFAULT_AMAZON_MARKETS = ("se", "de", "fr", "es")
+SITES_YAML = ROOT / "config" / "sites.yaml"
+
+
+def amazon_markets(path: Path = SITES_YAML) -> tuple[str, ...]:
+    """The markets sites.yaml actually checks."""
+    try:
+        import yaml
+        config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        markets = config.get("sites", {}).get("amazon", {}).get("markets")
+        if markets:
+            return tuple(str(m).strip() for m in markets if str(m).strip())
+    except Exception as e:  # a missing PyYAML must not break the resolver
+        print(f"  (could not read markets from {path}: {e})", file=sys.stderr)
+    return DEFAULT_AMAZON_MARKETS
 
 # Words that carry no identity: they appear in most titles and would make a
 # one-word wanted name match everything.
@@ -106,15 +123,20 @@ def load_site_catalogue(state_dir: Path, site: str) -> dict[str, str]:
             if isinstance(row, dict)}
 
 
-def load_amazon_catalogue(base: Path) -> dict[str, dict[str, str]]:
+def load_amazon_catalogue(base: Path, markets: tuple[str, ...] | None = None
+                          ) -> dict[str, dict[str, str]]:
     """{market: {asin: title}} from news-notifier's discovery output.
 
     Its format is `ASIN  # Title`, and a fully-commented line means tracking was
     paused rather than the product removed — so a line with no ASIN is skipped,
     not treated as a title.
+
+    Per-market because the TITLES differ per market and that is worth showing
+    (amazon.es translates "Nether Incendio" to "Nether Fire"). It is NOT how the
+    watchlist is decided: see merge_amazon_catalogue.
     """
     out: dict[str, dict[str, str]] = {}
-    for market in AMAZON_MARKETS:
+    for market in (markets or amazon_markets()):
         path = base / market / "products.txt"
         if not path.exists():
             continue
@@ -126,6 +148,45 @@ def load_amazon_catalogue(base: Path) -> dict[str, dict[str, str]]:
                 found[asin] = comment.strip()
         out[market] = found
     return out
+
+
+def merge_amazon_catalogue(per_market: dict[str, dict[str, str]]
+                           ) -> tuple[dict[str, str], dict[str, list[str]]]:
+    """Fold the markets into ONE catalogue: {asin: title}, {asin: [markets]}.
+
+    AN ASIN IS AN ASIN. The same ten characters is the same physical product on
+    every Amazon domain, so which market's crawler happened to surface it says
+    nothing about where it can be bought — and the checker visits every market
+    for every watchlisted ASIN regardless. Matching per market instead made a
+    product discovered only on .de look like partial coverage, and reported it
+    as four separate misses on a wanted product we were in fact watching
+    everywhere.
+
+    Every title is still searched, because they differ by market: amazon.se
+    calls Seize Jaguar "BEY BBX Browns Canyon" and amazon.es translates Nether
+    Incendio to "Nether Fire", so a name that matches nowhere else may match
+    there. The LONGEST title wins as the one displayed, being the most
+    descriptive, but a match against any of them is a match.
+    """
+    titles: dict[str, str] = {}
+    seen_on: dict[str, list[str]] = {}
+    for market, catalogue in per_market.items():
+        for asin, title in catalogue.items():
+            seen_on.setdefault(asin, []).append(market)
+            if len(title or "") > len(titles.get(asin, "")):
+                titles[asin] = title
+    return titles, {asin: sorted(ms) for asin, ms in seen_on.items()}
+
+
+def amazon_alias_titles(per_market: dict[str, dict[str, str]]) -> dict[str, str]:
+    """{"<asin>#<market>": title} — every market's name for every ASIN.
+
+    Fed to `match` as a catalogue so a wanted name is tested against ALL of an
+    ASIN's names, then collapsed back to the bare ASIN by the caller.
+    """
+    return {f"{asin}#{market}": title
+            for market, catalogue in per_market.items()
+            for asin, title in catalogue.items()}
 
 
 # A Beyblade X model code — 4-50UF, 9-65B, 3-80FB, 0-70LP. Printed on the
@@ -193,18 +254,28 @@ def main(argv: list[str] | None = None) -> int:
     print(f"wanted products: {len(wanted)}\n")
 
     state_dir = Path(args.state)
+    markets = amazon_markets()
     catalogues = {site: load_site_catalogue(state_dir, site) for site in SITE_IDENTIFIERS}
-    amazon = load_amazon_catalogue(Path(args.amazon_catalog))
+    per_market = load_amazon_catalogue(Path(args.amazon_catalog), markets)
+    # ONE Amazon catalogue, not one per market — see merge_amazon_catalogue.
+    amazon, seen_on = merge_amazon_catalogue(per_market)
+    aliases = amazon_alias_titles(per_market)
+
     for site, cat in catalogues.items():
         print(f"  {site:<12} {len(cat):>4} products in state  ({SITE_IDENTIFIERS[site]})")
-    for market, cat in amazon.items():
-        print(f"  amazon/{market:<5} {len(cat):>4} ASINs known    (from news-notifier discovery)")
+    print(f"  {'amazon':<12} {len(amazon):>4} ASINs known    (discovered on "
+          f"{', '.join(per_market) or 'no markets'}; each is checked on ALL of "
+          f"{', '.join(markets)})")
 
     per_site: dict[str, dict[str, list]] = {s: {"single": [], "bundle": []} for s in catalogues}
-    per_market: dict[str, dict[str, list]] = {m: {"single": [], "bundle": []} for m in amazon}
+    amazon_hits: dict[str, list] = {"single": [], "bundle": []}
     misses: dict[str, list[str]] = {}
 
-    all_catalogues = {**catalogues, **{f"amazon/{m}": c for m, c in amazon.items()}}
+    # ALIASES, not the merged catalogue: a model code has to be learnable from
+    # whichever market happens to print it. Feeding only the longest title per
+    # ASIN would lose 3-80FB whenever the market that spells it out is not the
+    # market with the wordiest marketing copy.
+    all_catalogues = {**catalogues, "amazon": aliases}
     for name in wanted:
         print(f"\n=== {name} ===")
         learned = learn_codes(all_catalogues, name, wanted)
@@ -225,19 +296,26 @@ def main(argv: list[str] | None = None) -> int:
                 found_anywhere = True
             if not singles and not bundles:
                 misses.setdefault(name, []).append(site)
-        for market, cat in amazon.items():
-            singles, bundles = match(cat, name, wanted, learned)
-            for asin, title in singles:
-                print(f"   amazon/{market:<5} {asin}")
-                print(f"                {title[:74]}")
-                per_market[market]["single"].append((asin, name, title))
-                found_anywhere = True
-            for asin, title in bundles:
-                print(f"   amazon/{market:<5} [BUNDLE] {asin}")
-                per_market[market]["bundle"].append((asin, name, title))
-                found_anywhere = True
-            if not singles and not bundles:
-                misses.setdefault(name, []).append(f"amazon/{market}")
+        # Matched against EVERY market's title for the ASIN, then collapsed back
+        # to the bare ASIN: a hit under any market's name is a hit, everywhere.
+        alias_singles, alias_bundles = match(aliases, name, wanted, learned)
+        found: dict[str, tuple[str, bool]] = {}
+        for key, title in alias_singles:
+            found[key.split("#", 1)[0]] = (title, False)
+        for key, title in alias_bundles:
+            asin = key.split("#", 1)[0]
+            # A single beats a bundle: if any market lists it as the product on
+            # its own, that is what it is.
+            found.setdefault(asin, (title, True))
+        for asin, (title, is_bundle) in sorted(found.items()):
+            where = ",".join(seen_on.get(asin, []))
+            print(f"   {'amazon':<12} {'[BUNDLE] ' if is_bundle else ''}{asin}"
+                  f"   (discovered on {where})")
+            print(f"                {title[:74]}")
+            amazon_hits["bundle" if is_bundle else "single"].append((asin, name, title))
+            found_anywhere = True
+        if not found:
+            misses.setdefault(name, []).append("amazon")
         if not found_anywhere:
             print("   NOT FOUND ANYWHERE — not stocked by any tracked store, or "
                   "listed under a name that shares no words with this one")
@@ -245,7 +323,9 @@ def main(argv: list[str] | None = None) -> int:
     print("\n\n=== coverage ===")
     for name in wanted:
         absent = misses.get(name, [])
-        stores = len(catalogues) + len(amazon)
+        # Amazon counts ONCE. It is one catalogue reached through several
+        # domains, not several catalogues.
+        stores = len(catalogues) + 1
         print(f"  {name:<20} found in {stores - len(absent)}/{stores} catalogues")
 
     if args.yaml:
@@ -264,11 +344,10 @@ def main(argv: list[str] | None = None) -> int:
                 quote = '"' if identifier.isdigit() else ""
                 print(f"      - {quote}{identifier}{quote}  # {name}{tag}")
         asins: dict[str, str] = {}
-        for market in per_market:
-            for asin, name, _ in per_market[market]["single"] + per_market[market]["bundle"]:
-                asins.setdefault(asin, name)
+        for asin, name, _ in amazon_hits["single"] + amazon_hits["bundle"]:
+            asins.setdefault(asin, name)
         if asins:
-            print("\n  # amazon (one ASIN covers se/de/fr/es)")
+            print(f"\n  # amazon (one ASIN covers {'/'.join(markets)})")
             for asin, name in sorted(asins.items(), key=lambda kv: kv[1]):
                 print(f"      - {asin}  # {name}")
     return 0

@@ -314,8 +314,10 @@ log.
 ## Sites
 
 **Shopify (`sites/shopify.py`)** — one module for every Shopify store,
-parameterized by domain + collections in `sites.yaml`: `popsplanet.it`
-(booster / starter-pack / double-pack collections) and `toysnowman.com`.
+parameterized by domain + collections in `sites.yaml`. Today that is
+`toysnowman.com` alone; it was written for two, which is what proved the
+parameterization (popsplanet.it was dropped 2026-09-16 — the user's call, "a
+pretty shady site" with shipping to match, not a technical failure).
 `/products.json?limit=250` gives `available` (authoritative, and it already
 covers pre-orders), `price`, `compare_at_price` and `sku` per variant.
 
@@ -443,15 +445,23 @@ at every retailer in every language, so once any catalogue names a product
 plainly its code is learned and every other catalogue can be searched by it. This
 is the cheap cousin of the barcode bridge and it needs no product-page fetch.
 
-Coverage of the user's 13 wanted products, measured 2026-09-10: Shark Scale is at
+**THE WANTED LIST IS FIVE, since 2026-09-16** — Reaper Incendio, Shark Scale,
+Sterling Wolf, Seize Jaguar, Glare Cyclops. The other eight were found and
+ordered, and are kept commented out at the bottom of
+`config/wanted_products.txt` rather than deleted. lereservoir stocks none of the
+five, so its watchlist is deliberately empty — which means "everything", and
+everything there is three products. Its job is now purely new-product discovery;
+see the reasoning in `sites.yaml`. The measurements below are from the 13-product era and are kept
+because what they say about NAMING still holds.
+
+Coverage of the user's then-13 wanted products, measured 2026-09-10: Shark Scale is at
 5 of 10 catalogues, most others at 1-4, and **Ring Aether and Blitz Bahamut at
 none** — absent from rarewaves' full 156-product catalogue too, so they are
 almost certainly unreleased here. Blitz Bahamut exists on amazon.se only as a
 945 kr Takara Tomy import. Both will arrive through new-product alerts.
 
-**Only 5 of the 13 are on Amazon at all.** Searching amazon.se for the other 8
-returned no Beyblade result, and news-notifier's 192 discovered ASINs contain
-none of them.
+Of those 13, only 5 were on Amazon at all — and those 5 are exactly the five
+still wanted, so every wanted product is now watched there.
 
 ### The cross-site naming problem — the barcode bridge WORKS
 
@@ -770,7 +780,7 @@ ready-to-paste `sites.yaml` block. Re-run with
 `--collections a,b,c` once you have decided which to keep.
 
 **It does not choose for you, and must not start doing so.** A store groups
-by its own logic: popsplanet files anime merchandise and launcher
+by its own logic: popsplanet filed anime merchandise and launcher
 accessories under "beyblade" next to the actual toys, so an earlier version
 that maximised product count "found" 38 extra products that were
 deliberately excluded. Coverage is not the goal — the user's filter is.
@@ -778,10 +788,10 @@ Overlap between collections is reported as advisory only (a fully-covered
 collection costs one request per run and adds nothing, since the checker
 dedupes by handle), but whether to include one is a judgement about content.
 
-Currently tracked: popsplanet's `beyblade-x-booster` / `-starter-pack` /
-`-double-pack` (102 products, EUR), toysnowman's `beyblade` (59 after
-excluding Beyblade Burst, SEK), and gameshop.se via the WooCommerce module
-(131 after the same exclusion, SEK). 16 watchlisted items across the three.
+Currently tracked: toysnowman's `beyblade` (59 after excluding Beyblade Burst,
+SEK) and gameshop.se via the WooCommerce module (131 after the same exclusion,
+SEK), plus ginza, rarewaves, lereservoir and Amazon. 14 watchlisted items across
+all six as of 2026-09-16.
 A store that is not Shopify needs its own module — `audit_store.py` only
 probes Shopify, and says so when a store is not.
 
@@ -789,7 +799,7 @@ probes Shopify, and says so when a store is not.
 arrives in ONE request, so tracking every product in it is free and worth
 doing: it builds price history and gives each product a `first_seen` date.
 What the per-site `watchlist` controls is only whether a restock may
-INTERRUPT you, via `StockResult.alertable`. With 161 products tracked,
+INTERRUPT you, via `StockResult.alertable`. With ~300 products tracked,
 alerting on all of them is noise; the watchlist is how that gets quiet
 without giving up the data. Empty watchlist = alert on everything.
 
@@ -818,6 +828,27 @@ lines a store mixes into one collection.
 New products need no special handling for alerting: an unseen handle has no
 stored state, so a watchlisted one alerts the first time it appears in
 stock.
+
+### ONE ASIN, EVERY DOMAIN — no partial Amazon coverage
+
+**Markets are `[se, de, fr, es, it]`** (`it` added 2026-09-16), and every
+watchlisted ASIN is checked on every one of them. The same ten characters is the
+same physical product whichever Amazon serves it, so a domain is never skipped
+because its listing is titled differently, is missing, or redirects elsewhere —
+that IS the answer being asked for. `tests/test_amazon_markets.py` asserts it
+against the live config, so the property cannot quietly regress.
+
+The checker always worked this way; the REPORTING did not, and that is what made
+coverage look half-done. `resolve_watchlist.py` matched each market's
+`products.txt` separately, so an ASIN discovered only on `.de` read as four
+misses on a product we were in fact watching everywhere. It now folds the
+markets into ONE catalogue (`merge_amazon_catalogue`) while still searching
+every market's TITLE (`amazon_alias_titles`) — the titles differ, the product
+does not. Which market discovered an ASIN is displayed, and decides nothing.
+
+`AMAZON_MARKETS` used to be hard-coded in that script; it now reads `markets:`
+out of `sites.yaml`, because a constant is how adding a market quietly fails to
+extend discovery with it.
 
 ### Amazon new-product discovery lives in news-notifier, NOT here
 
@@ -866,12 +897,21 @@ the availability answer, not decoration.
   not pinged for bad news, but future improvements are judged against what is
   actually promised now.
 - `max_delivery_days` (90) treats a further-out estimate as NOT in stock. It
-  sets `in_stock` false rather than muting the alert, and that choice is the
+  sets `in_stock` false rather than using `alertable`, and that choice is the
   mechanism: the estimate later coming inside the window then reads as an
-  ordinary restock, so you are told when the item becomes actually available.
-  Muting via `alertable` would be worse twice over — it would also gag the
-  date-moved-earlier alert, the very signal that matters. Nothing is hidden:
-  the alert says it was orderable but too far out, and names the date.
+  ordinary restock, so you are told when the item becomes actually available,
+  where `alertable` would gag that transition too. Nothing is hidden: the alert
+  says it was orderable but too far out, and names the date.
+- **A date beyond that window does not ping when it moves earlier** (added
+  2026-09-16 at the user's request — "stop pinging about release dates that are
+  too far away"). One predicate, `beyond_window`, now answers both "is this
+  really available" and "is this move worth an interruption", because they must
+  agree: a date two years out was being treated as unavailable AND announced
+  every time it crept earlier. The move is still recorded and re-anchored, so
+  the step that finally brings the date inside the window DOES alert — nothing
+  is lost by staying quiet, which `tests/test_amazon_noise.py` pins down.
+- Note that a date beyond 400 days never becomes a date at all: the
+  plausibility screen discards it first.
 
 `StockResult.alert_reason` is how a site REQUESTS an alert core cannot judge —
 the mirror of `alertable` letting it veto one. A date moving earlier is not a
@@ -901,9 +941,15 @@ Flag anything above `reference * scalp_multiplier` (default 2.0, set in
 far less than having a trustworthy reference.
 
 - A flagged listing is still `in_stock=True` (it genuinely is purchasable),
-  carrying an explanatory note. `alert_on_suspected_scalp: true` in
-  `sites.yaml` tags it; set it false to suppress the notification.
-  Detection, logging and state recording continue either way.
+  carrying an explanatory note. `alert_on_suspected_scalp` in `sites.yaml`
+  decides whether it may interrupt you; **it is false since 2026-09-16**, at the
+  user's request — a 4x listing is the normal state of this product line, not
+  news. Detection, logging, the note and state recording all continue, so the
+  dashboard's cross-store comparison still shows the outlier. The suppression
+  works through `alertable`, which `alert_kind` also applies to a
+  site-requested date alert, so a muted scalp cannot return through that side
+  door (a brand-new product still alerts once, by design — you cannot decide
+  about a listing you have never been told exists).
 - **No per-ASIN reference -> fall back to a title-derived tier ceiling**
   (`sites/amazon/tiers.py`). This is what makes the scalper case judgeable
   at all: a product whose only sightings anywhere are third-party never

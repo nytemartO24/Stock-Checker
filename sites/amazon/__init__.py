@@ -226,6 +226,17 @@ def parse_product(html: str, config: dict, *, delivery_country: str) -> ParsedPr
     )
 
 
+def beyond_window(delivery_days: int | None, max_days: int | None) -> bool:
+    """Is this estimate further out than we care about?
+
+    One predicate for two decisions that must agree: the listing is not really
+    available (apply_delivery_window), and its date moving is not worth a
+    Discord ping. They disagreed once — a date two years out was treated as
+    unavailable AND announced every time it crept earlier.
+    """
+    return bool(max_days) and delivery_days is not None and delivery_days > int(max_days)
+
+
 def apply_delivery_window(in_stock: bool, delivery_days: int | None,
                           delivery_date: str | None,
                           max_days: int | None) -> tuple[bool, str | None]:
@@ -234,19 +245,22 @@ def apply_delivery_window(in_stock: bool, delivery_days: int | None,
     A long estimate is itself a form of unavailability: an add-to-cart button
     and a date six months out is not something you can have.
 
-    Returns (in_stock, note). Setting in_stock False rather than merely muting
-    the alert is the point — the estimate later coming inside the window then
+    Returns (in_stock, note). Setting in_stock False rather than muting via
+    `alertable` is the point — the estimate later coming inside the window then
     reads as an ordinary out-of-stock -> in-stock transition, so you are told
-    when the item becomes ACTUALLY available. Muting via `alertable` would be
-    worse twice over: it would also gag the date-moved-earlier alert, which is
-    the very signal that matters here.
+    when the item becomes ACTUALLY available, whereas `alertable` would gag that
+    transition too.
 
-    Nothing is hidden — the note states the real position, and the result still
-    carries the date.
+    The date-moved-earlier alert is ALSO suppressed while the date is beyond the
+    window (see beyond_window), but separately and for a different reason: the
+    move is recorded and re-anchored, so the step that finally brings the date
+    inside the window still fires. An earlier version announced every creep of a
+    date two years out, which is how this became noise rather than news.
+
+    Nothing is hidden — the note states the real position, the log records the
+    move, and the result still carries the date.
     """
-    if not in_stock or not max_days or delivery_days is None:
-        return in_stock, None
-    if delivery_days <= int(max_days):
+    if not in_stock or not beyond_window(delivery_days, max_days):
         return in_stock, None
     return False, (
         f"orderable, but the estimate is {delivery_days} days out "
@@ -424,11 +438,21 @@ class AmazonChecker(SiteChecker):
         self._seen_keys.add(key)
         baseline, improved = deliveries.observe(key, parsed.delivery_date, parsed.delivery_iso)
         alert_reason = None
-        if improved:
+        if improved and not beyond_window(parsed.delivery_days,
+                                          self.options.get("max_delivery_days")):
             alert_reason = (
                 f"delivery date moved earlier: {baseline} → {parsed.delivery_date}"
                 if baseline else f"delivery date now promised: {parsed.delivery_date}"
             )
+        elif improved:
+            # STILL RE-ANCHORED, just not announced. A date walking from June to
+            # March is not news when you cannot have the thing either way, and
+            # the ping for it was pure noise. Nothing is lost: the baseline
+            # observe() just stored is the far date, so the move that finally
+            # brings it inside the window is measured against it and DOES alert.
+            logger.info("[%s] %s %s: date improved to %s but is still beyond the "
+                        "%s-day window — recorded, not alerted", self.name, market,
+                        asin, parsed.delivery_date, self.options.get("max_delivery_days"))
 
         notes = [verdict.note] if verdict.note else []
         if location_note:

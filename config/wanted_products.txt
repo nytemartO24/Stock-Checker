@@ -1,6 +1,8 @@
-# The Beyblades the user is hunting — supplied 2026-09-10.
+# The Beyblades the user is hunting — cut to five on 2026-09-16.
 #
-# "All the ones I know exist that I don't have." This is the SOURCE OF TRUTH for
+# The rest were FOUND AND ORDERED, not abandoned, so they are listed at the
+# bottom rather than deleted: a name that comes back should come back as a
+# decision, not because someone half-remembered it. This is the SOURCE OF TRUTH for
 # what should be watchlisted; the per-store `watchlist:` entries in sites.yaml
 # are derived from it by `scripts/resolve_watchlist.py`, because every store
 # keys products differently (Shopify handle, WooCommerce slug, Ginza numeric id,
@@ -13,16 +15,20 @@
 # One name per line. `#` comments and blank lines ignored. Add a product code
 # after the name if a name alone is ambiguous.
 
-Ring Aether
-Suppress Superion
-Glare Cyclops
-Cobalt Drake
-Sterling Wolf
-Shark Scale
-Clock Mirage
-Nether Incendio
-Seize Jaguar
-Perseus Dark
 Reaper Incendio
-Blitz Bahamut
-Whip Brachio
+Shark Scale
+Sterling Wolf
+Seize Jaguar
+Glare Cyclops
+
+# --- Ordered 2026-09-16, no longer hunted -------------------------------------
+# Re-add a line above to start tracking it again, then re-run
+# scripts/resolve_watchlist.py so every store's watchlist follows.
+# Ring Aether
+# Suppress Superion
+# Cobalt Drake
+# Clock Mirage
+# Nether Incendio
+# Perseus Dark
+# Blitz Bahamut
+# Whip Brachio

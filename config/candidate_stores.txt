@@ -32,6 +32,11 @@
 # probems.be (5), goldsaucerstore.com (10, mostly accessories),
 # gamesplusmalta.com (13).
 
+# DROPPED 2026-09-16, by the user's decision: popsplanet.it. It was tracked for
+# a week and removed as "a pretty shady site", with shipping cost and times to
+# match. Not a technical failure — the Shopify module served it perfectly — so
+# do not re-add it on the grounds that it works.
+
 # --- Kept: worth probing, not yet tracked ---
 kaufland.de              # The one German find worth keeping (user's call). NOT
                          # yet trackable: Cloudflare's JS challenge never

@@ -562,39 +562,41 @@ def panel_amazon_discovery(sites_cfg: dict, wanted: list[str]) -> str:
     exactly how Cobalt Drake (B0G4NFJJN1) got here. Its catalogue is on the same
     box, so the comparison is free and the gap can simply be shown.
     """
-    catalogues = resolver.load_amazon_catalogue(resolver.AMAZON_CATALOG)
+    catalogues = resolver.load_amazon_catalogue(
+        resolver.AMAZON_CATALOG, resolver.amazon_markets())
     if not catalogues:
         return '<p class="empty">news-notifier catalogue not readable from here.</p>'
     watched = {str(a).strip() for a in
                (sites_cfg.get("amazon", {}).get("watchlist") or [])}
-    merged: dict[str, tuple[str, list[str]]] = {}
-    for market, catalogue in catalogues.items():
-        for asin, title in catalogue.items():
-            if asin in merged:
-                merged[asin][1].append(market)
-            else:
-                merged[asin] = (title, [market])
+    # One catalogue, several domains. "Seen on" below is where DISCOVERY saw it,
+    # which is not where it would be checked: a watchlisted ASIN is checked on
+    # every market in sites.yaml regardless of which crawler first found it.
+    titles, seen_on = resolver.merge_amazon_catalogue(catalogues)
 
     rows = []
     for name in wanted:
-        learned = resolver.learn_codes(
-            {m: c for m, c in catalogues.items()}, name, wanted)
-        for asin, (title, markets) in sorted(merged.items()):
+        learned = resolver.learn_codes(catalogues, name, wanted)
+        need = resolver.tokens(name)
+        for asin, title in sorted(titles.items()):
             if asin in watched:
                 continue
-            need = resolver.tokens(name)
-            by_words = bool(need) and need <= resolver.tokens(title)
-            by_code = bool(learned) and bool(learned & resolver.codes(title))
+            # Matched against EVERY market's name for this ASIN, not just the
+            # longest one shown: amazon.es translates names, so a product can
+            # match under one domain's title and nowhere else.
+            names = [catalogue[asin] for catalogue in catalogues.values()
+                     if asin in catalogue]
+            by_words = bool(need) and any(need <= resolver.tokens(t) for t in names)
+            by_code = bool(learned) and any(learned & resolver.codes(t) for t in names)
             if not (by_words or by_code):
                 continue
             rows.append([
                 esc(name),
                 f'<code>{esc(asin)}</code>',
-                esc(",".join(sorted(markets))),
+                esc(",".join(seen_on.get(asin, []))),
                 esc(title[:70]),
                 pill("not watchlisted", "warn"),
             ])
-    return table(["Wanted product", "ASIN", "Seen on", "Discovered title",
+    return table(["Wanted product", "ASIN", "Discovered on", "Discovered title",
                   "Status"], rows,
                  empty="Every discovered ASIN for a wanted product is watchlisted.")
 
