@@ -149,3 +149,12 @@ CLAUDE.md and trim this file.
   beyond `max_delivery_days` marked the listing unavailable while its
   moved-earlier alert still fired every time. Fixed by extracting one predicate
   (`beyond_window`) both call, rather than repeating the comparison.
+- 2026-09-16: adding amazon.it exposed an old hole rather than a new one. Every
+  cron read of .it came back with no #productTitle and was recorded as
+  "unavailable", while the identical code path run by hand returned real titles
+  and found Sterling Wolf IN STOCK there. An unrendered page has no add-to-cart
+  button and no availability copy, so it parses exactly like a sold-out listing.
+  A page with no title is now a counted error, not a result. The discrepancy
+  between the cron reads and the hand runs is still unexplained and worth
+  watching — the guard makes it visible instead of silent.
+

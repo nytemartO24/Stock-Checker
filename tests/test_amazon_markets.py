@@ -124,3 +124,35 @@ def test_a_market_missing_from_a_products_catalogue_is_still_checked(visits):
     urls, _results, _checker = visits(dict(AMAZON))
     hosts = {url.split("/-/")[0] for url in urls if "B0FCYT9DG6" in url}
     assert hosts == {f"https://www.amazon.{m}" for m in AMAZON["markets"]}
+
+
+def test_a_page_with_no_title_is_a_failure_not_an_unavailable(monkeypatch, tmp_path):
+    """An unrendered page has no add-to-cart button and no availability copy, so
+    it parses exactly like a sold-out listing. Recording that would make "we
+    never read the page" the baseline a real restock fires against — which is
+    what amazon.it did on every cron read the day it was added."""
+    from sites import amazon as amazon_module
+
+    seen: list[str] = []
+
+    class Blank(FakePage):
+        def content(self):
+            # A plausible shell: the chrome renders, the product does not.
+            return '<html lang="en-gb"><body><div id="nav-belt"></div></body></html>'
+
+    monkeypatch.setattr(amazon_module.amazon_browser, "open_market",
+                        lambda *_a, **_k: (types.SimpleNamespace(close=lambda: None),
+                                           Blank(seen), "Sweden", True))
+    monkeypatch.setattr(amazon_module.amazon_browser, "safe_goto",
+                        lambda page, url, market: page.goto(url))
+    monkeypatch.setattr(amazon_module, "sync_playwright", FakePlaywright)
+
+    options = dict(AMAZON, markets=["it"], watchlist=["B0TEST"])
+    checker = AmazonChecker("amazon", options, FakeClient(), tmp_path)
+    results = list(checker.check())
+
+    assert results == [], "a titleless page must not become a StockResult"
+    assert seen, "it still visited the page"
+    # errors is what stops main.py pruning state against an incomplete view, so
+    # a run of these cannot quietly delete the products it failed to read.
+    assert checker.errors == 1

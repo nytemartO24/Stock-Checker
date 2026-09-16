@@ -850,6 +850,19 @@ does not. Which market discovered an ASIN is displayed, and decides nothing.
 out of `sites.yaml`, because a constant is how adding a market quietly fails to
 extend discovery with it.
 
+**A PAGE WITH NO `#productTitle` IS A FAILURE, NOT AN "UNAVAILABLE".** Adding
+`it` exposed this, and it was never .it-specific: an unrendered page has no
+add-to-cart button and no availability copy, so it parses exactly like a
+sold-out listing and gets recorded as the baseline a future restock would fire
+against. Every cron read of amazon.it came back that way on 2026-09-16, while
+the identical code path run by hand returned real titles and found Sterling Wolf
+IN STOCK there. `_check_one` now counts a titleless page as an error and records
+nothing — errors stops the prune, so a run of them cannot delete what it failed
+to read. **The cron-versus-hand discrepancy itself is unexplained**; the guard
+makes it visible rather than explaining it. If `it` keeps erroring, that is the
+thing to observe next (render it under cron conditions, do not reason from the
+log).
+
 ### Amazon new-product discovery lives in news-notifier, NOT here
 
 **Do not "add" it and do not assume it is missing.** This project's Amazon module

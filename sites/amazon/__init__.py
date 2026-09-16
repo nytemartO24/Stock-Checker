@@ -413,12 +413,33 @@ class AmazonChecker(SiteChecker):
             logger.info("[%s] %s %s: no target selector within 6s — parsing as-is",
                         self.name, market, asin)
 
-        parsed = parse_product(page.content(), config, delivery_country=country)
+        html = page.content()
+        parsed = parse_product(html, config, delivery_country=country)
         if parsed.untrusted:
             # Not a result: recording it would let a wrong-destination page
             # become the baseline a future alert fires against.
             self.errors += 1
             logger.warning("[%s] %s %s: %s", self.name, market, asin, parsed.untrusted)
+            return None
+
+        # NO TITLE MEANS WE DID NOT GET A PRODUCT PAGE. #productTitle is
+        # server-rendered on every real listing — verified on six live amazon.it
+        # pages — so its absence is not a fact about the product.
+        #
+        # This is load-bearing rather than tidiness. A page that never rendered
+        # has no add-to-cart button and no availability copy, which parses as
+        # `in_stock=False`: an unread page is indistinguishable from a sold-out
+        # one, and gets recorded as the baseline a future restock fires against.
+        # Amazon.it was added on 2026-09-16 and every cron read of it came back
+        # this way while a hand-run of the identical code path returned real
+        # titles and found Sterling Wolf IN STOCK. Treat it as the visible
+        # failure it is: errors stops the prune, and the log says which.
+        if not parsed.title:
+            self.errors += 1
+            logger.warning(
+                "[%s] %s %s: no product title on the page (%d bytes, url %s) — "
+                "not a product page, so NOT recording it as unavailable",
+                self.name, market, asin, len(html), page.url)
             return None
 
         price_sek = to_sek(parsed.price_value, parsed.currency)
