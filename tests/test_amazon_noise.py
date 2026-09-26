@@ -109,7 +109,8 @@ def _run(tmp_path, monkeypatch, *, delivery_in_days: int):
 
     from sites import amazon as amazon_module
     from sites.amazon import AmazonChecker
-    from tests.test_amazon_markets import FakeClient, FakePage, FakePlaywright
+    from tests.test_amazon_markets import (PINNED, FakeClient, FakePage,
+                                           FakePlaywright)
 
     when = datetime.date.today() + datetime.timedelta(days=delivery_in_days)
     page_html = (
@@ -129,7 +130,7 @@ def _run(tmp_path, monkeypatch, *, delivery_in_days: int):
 
     monkeypatch.setattr(amazon_module.amazon_browser, "open_market",
                         lambda *_a, **_k: (types.SimpleNamespace(close=lambda: None),
-                                           Page(seen), "Sweden", True))
+                                           Page(seen), PINNED))
     monkeypatch.setattr(amazon_module.amazon_browser, "safe_goto",
                         lambda page, url, market: page.goto(url))
     monkeypatch.setattr(amazon_module, "sync_playwright", FakePlaywright)

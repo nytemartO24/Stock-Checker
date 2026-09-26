@@ -157,4 +157,22 @@ CLAUDE.md and trim this file.
   A page with no title is now a counted error, not a result. The discrepancy
   between the cron reads and the hand runs is still unexplained and worth
   watching — the guard makes it visible instead of silent.
+- 2026-09-26: a retry loop that cannot possibly work. amazon.se's location modal
+  retried by re-clicking the opener, but when the popover opens broken it COVERS
+  the opener, so every retry died with TimeoutError before reaching the check.
+  The loop was written for, and measured against, a different failure (the
+  popover never opening). Lesson: when adding a retry, name the failure it
+  recovers from in the code, and check whether the failure state itself blocks
+  the retry.
+- 2026-09-26: two booleans were hiding in one. "Delivery location not applied"
+  meant both "we do not know the country" (fatal, results incomparable) and "we
+  do not know the city" (precision only). Collapsing them meant a missing
+  postcode on amazon.se disabled PRUNING across all five markets for days.
+  Before treating a degradation as fatal, ask what was actually lost.
+- 2026-09-26: the log lied about the cause and rendering the page corrected it.
+  The failure looked like slow content or changed markup; the popover actually
+  said "Sorry, content is not available." Also: the obvious correlate (.se's
+  1462 spurious download prompts, zero elsewhere) was NOT the cause - prompts
+  peaked on the days pin failures were lowest. Correlation by market is not
+  correlation over time; check both.
 

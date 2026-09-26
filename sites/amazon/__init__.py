@@ -355,20 +355,25 @@ class AmazonChecker(SiteChecker):
                 "precise address; set it in .env", self.name)
 
         logger.info("[%s] %s: checking %d product(s)", self.name, market, len(self.watchlist))
-        browser_handle, page, location, pinned = amazon_browser.open_market(
+        browser_handle, page, destination = amazon_browser.open_market(
             playwright, market, config,
             country=country, postcode=postcode,
             headless=bool(self.options.get("headless", True)),
         )
-        if not pinned:
-            # Availability is meaningless without a destination: Amazon has
+        if not destination.usable:
+            # Availability is meaningless without the right COUNTRY: Amazon has
             # geolocated the runner instead of answering our question. Don't
             # prune against this view, and label anything it produces.
+            #
+            # A merely imprecise destination (the postcode did not apply on the
+            # domestic market) is NOT counted here. It used to be, and the cost
+            # was out of all proportion: from 2026-09-23 amazon.se failed to
+            # apply its postcode on 96% of runs, which marked every Amazon run
+            # incomplete and so disabled pruning for all five markets — state
+            # kept products that had been dropped from the watchlist for days.
+            # The note still rides along on every alert from that market.
             self.errors += 1
-        location_note = None if pinned else (
-            f"delivery location not applied (reads {location or 'nothing'!r}) — "
-            f"availability may describe a destination other than {country}"
-        )
+        location_note = destination.note
         try:
             for asin in self.watchlist:
                 try:
@@ -382,7 +387,8 @@ class AmazonChecker(SiteChecker):
                     yield result
         finally:
             browser_handle.close()
-            logger.info("[%s] %s: done (delivering to %s)", self.name, market, location or "UNKNOWN")
+            logger.info("[%s] %s: done (delivering to %s)", self.name, market,
+                        destination.text or "UNKNOWN")
 
     def _check_one(self, page, market: str, config: dict, asin: str,
                    references: ReferencePrices, country: str, deliveries,

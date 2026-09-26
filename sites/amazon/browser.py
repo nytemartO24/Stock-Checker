@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
@@ -163,6 +164,64 @@ def _select_country(page, market: str, country: str) -> bool:
 
 MODAL_CONTROLS = "#GLUXCountryList, [id^='GLUXZipUpdateInput']"
 POPOVER = ".a-popover-inner"
+POPOVER_CLOSE = ("button[data-action='a-popover-close']", ".a-popover .a-button-close")
+
+
+@dataclass
+class Destination:
+    """What this session will quote availability FOR.
+
+    Two separate questions, and conflating them is what made amazon.se's 2026-09
+    collapse so expensive:
+
+    `usable` — is the COUNTRY right? Availability from a session pointed at the
+    wrong country is not comparable to the other markets and must not be pruned
+    against. This is the one that matters.
+
+    `exact` — was the postcode applied on top? It only sharpens the delivery
+    ESTIMATE from country-level to city-level. Losing it costs precision, not
+    correctness.
+    """
+
+    text: str
+    """Whatever the location widget reads, for the log and the alert."""
+
+    usable: bool
+    exact: bool
+    note: str | None = None
+    """Set when something is degraded; rendered in the alert verbatim."""
+
+
+def dismiss_popover(page, market: str) -> bool:
+    """Close whatever popover is open, so a retry can actually re-click.
+
+    THIS IS THE BUG THAT MADE THE RETRY LOOP USELESS on amazon.se. When the
+    location fragment fails, Amazon still opens the popover — containing
+    "Sorry, content is not available." — and it COVERS the opener. Every
+    subsequent `opener.click()` then dies with TimeoutError, so attempts 2 and 3
+    never even reached the check. The production log shows exactly that shape:
+    one "popover open but no control", then two "opener click failed
+    (TimeoutError)". The loop's docstring measured the OTHER failure (popover
+    never opened), where re-clicking is the right move.
+    """
+    if not page.locator(POPOVER).count():
+        return False
+    for selector in POPOVER_CLOSE:
+        control = page.locator(selector)
+        if control.count():
+            try:
+                control.first.click(timeout=3000)
+                page.wait_for_timeout(400)
+                if not page.locator(POPOVER).count():
+                    return True
+            except Exception:
+                pass
+    try:
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(400)
+    except Exception:
+        pass
+    return not page.locator(POPOVER).count()
 
 
 def _open_location_modal(page, market: str, attempts: int = 3) -> bool:
@@ -207,14 +266,20 @@ def _open_location_modal(page, market: str, attempts: int = 3) -> bool:
             opened = page.locator(POPOVER).count()
         except Exception:
             pass
-        # Distinguish the two failures rather than logging one message for both:
-        # a popover with no controls would be a markup change on Amazon's side,
-        # while no popover at all is the click-too-early case this loop fixes.
+        # Distinguish the two failures rather than logging one message for both.
+        # "popover open but no controls" is Amazon failing to serve the location
+        # fragment (it renders "Sorry, content is not available."); no popover at
+        # all is the click-too-early case this loop was built for.
         logger.warning("[%s]   location modal not usable (attempt %d/%d): "
                        "%s — retrying", market, attempt, attempts,
                        "popover open but no postcode/country control" if opened
                        else "popover did not open at all")
         if attempt < attempts:
+            # MUST come before the next click. A broken popover covers the
+            # opener, so without this every remaining attempt dies with
+            # TimeoutError and the retry loop cannot help at all.
+            if opened:
+                dismiss_popover(page, market)
             try:
                 page.wait_for_load_state("networkidle", timeout=8000)
             except Exception:
@@ -223,13 +288,29 @@ def _open_location_modal(page, market: str, attempts: int = 3) -> bool:
     return False
 
 
-def set_delivery_location(page, market: str, config: dict, country: str, postcode: str) -> str:
-    """Pin the destination. Never raises; returns whatever the widget says.
+def set_delivery_location(page, market: str, config: dict, country: str,
+                          postcode: str) -> Destination:
+    """Pin the destination. Never raises; reports what it actually achieved.
 
-    A failure here doesn't invalidate the run, it just means results
-    describe Amazon's guessed destination instead of the requested one — so
-    the caller logs the discrepancy loudly rather than silently comparing
-    incomparable answers.
+    A FAILURE MEANS DIFFERENT THINGS ON A FOREIGN AND A DOMESTIC MARKETPLACE,
+    and treating them alike is what made amazon.se's collapse cost far more than
+    it should have.
+
+    On a FOREIGN market the country picker is the whole mechanism: if it does not
+    apply, the session describes whatever country Amazon geolocated, so the
+    results are not comparable and must not be pruned against. Unusable.
+
+    On the DOMESTIC market the fallback IS the country we want — amazon.se serves
+    Sweden by default. Measured 2026-09-26 on an unpinned .se session: prices
+    quoted in SEK, a normal Swedish delivery promise, and no international
+    shopping banner. The postcode only sharpens the estimate from country-level
+    to Karlskrona-level. So this is degraded precision, not a wrong answer.
+
+    That is safe rather than merely convenient because the wrong-destination case
+    is caught INDEPENDENTLY downstream: parse_product marks a page untrusted when
+    the international banner names a country other than the one we asked for. If
+    amazon.se ever does start answering for somewhere else, that guard fires
+    whatever this function concluded.
     """
     domestic = config["country"].strip().lower() == country.strip().lower()
     try:
@@ -267,18 +348,50 @@ def set_delivery_location(page, market: str, config: dict, country: str, postcod
     except Exception as e:
         logger.warning("[%s] could not set delivery location: %s", market, e)
 
-    return read_delivery_location(page)
+    return classify_destination(read_delivery_location(page), market,
+                                domestic=domestic, country=country, postcode=postcode)
+
+
+def classify_destination(text: str, market: str, *, domestic: bool, country: str,
+                         postcode: str) -> Destination:
+    """Turn what the widget reads into the two answers that matter.
+
+    Pure, so the rules are testable without a browser — which they need to be,
+    because they decide whether a market's results may be pruned against.
+    """
+    # Substring check both ways: the widget renders the country alone for an
+    # international destination ("Sweden") but city + postcode for a domestic one
+    # ("Karlskrona 371 16"), so neither is a prefix of a fixed string.
+    matched = bool(text) and (
+        country.strip().lower() in text.lower()
+        or (postcode.replace(" ", "") and postcode.replace(" ", "") in text.replace(" ", ""))
+    )
+    if matched:
+        return Destination(text, usable=True, exact=True)
+    if domestic:
+        return Destination(
+            text, usable=True, exact=False,
+            note=(f"postcode not applied on the domestic market (widget reads "
+                  f"{text or 'nothing'!r}) — delivery estimates are country-level "
+                  f"for {country} rather than {postcode or 'your postcode'}"),
+        )
+    return Destination(
+        text, usable=False, exact=False,
+        note=(f"delivery location not applied (reads {text or 'nothing'!r}) — "
+              f"availability may describe a destination other than {country}"),
+    )
 
 
 def open_market(playwright, market: str, config: dict, *, country: str, postcode: str, headless: bool = True):
     """Launch a browser for one marketplace, warmed up and pinned.
 
-    Returns (browser, page, location, pinned). Close the browser yourself.
+    Returns (browser, page, Destination). Close the browser yourself.
 
-    `pinned` is False when the destination could not be applied, which the
-    caller MUST act on rather than merely log: availability read from an
-    unpinned session describes wherever Amazon guessed, so it is not
-    comparable to the other markets and shouldn't be pruned against.
+    `Destination.usable` False means the COUNTRY could not be applied, which the
+    caller MUST act on rather than merely log: availability read from such a
+    session describes wherever Amazon guessed, so it is not comparable to the
+    other markets and must not be pruned against. `exact` False is only a loss of
+    precision — see set_delivery_location.
     """
     # news-notifier launches with channel="chromium" — the branded build
     # rather than Playwright's bundled one — and ran for months that way. It is
@@ -297,8 +410,9 @@ def open_market(playwright, market: str, config: dict, *, country: str, postcode
     page = context.new_page()
 
     warmup_url = f"https://www.{config['domain']}/-/en/"
-    location = ""
-    pinned = False
+    domestic = config["country"].strip().lower() == country.strip().lower()
+    destination = classify_destination("", market, domestic=domestic,
+                                       country=country, postcode=postcode)
     try:
         # MUST go through safe_goto, not a bare page.goto: Amazon throws a
         # spurious "Download is starting" on navigation, and an unprotected
@@ -343,24 +457,26 @@ def open_market(playwright, market: str, config: dict, *, country: str, postcode
                 "[%s] no location picker after 2 warm-up attempts; the destination "
                 "cannot be pinned and this market's results are not comparable", market,
             )
-        location = set_delivery_location(page, market, config, country, postcode)
+        destination = set_delivery_location(page, market, config, country, postcode)
 
-        # Substring check both ways: the widget renders the country alone
-        # for international ("Sweden") but city + postcode for domestic
-        # ("Karlskrona 371 16"), so neither is a prefix of a fixed string.
-        pinned = bool(location) and (
-            country.lower() in location.lower()
-            or postcode.replace(" ", "") in location.replace(" ", "")
-        )
-        if pinned:
-            logger.info("[%s] delivery location confirmed: %r", market, location)
+        if destination.exact:
+            logger.info("[%s] delivery location confirmed: %r", market, destination.text)
+        elif destination.usable:
+            # Worth a warning, not an error: the country is right, so the market
+            # is still comparable and still prunable.
+            logger.warning(
+                "[%s] postcode not applied — widget reads %r. The domestic store "
+                "already answers for %s, so results stand; delivery estimates are "
+                "country-level rather than for %s.",
+                market, destination.text, country, postcode or "your postcode",
+            )
         else:
             logger.warning(
                 "[%s] DELIVERY LOCATION NOT APPLIED — widget reads %r, wanted %s/%s. "
                 "Results from this market describe Amazon's guessed destination.",
-                market, location, country, postcode,
+                market, destination.text, country, postcode,
             )
     except Exception as e:
         logger.warning("[%s] warm-up failed: %s", market, e)
 
-    return browser, page, location, pinned
+    return browser, page, destination

@@ -16,7 +16,10 @@ import pytest
 import yaml
 
 from sites.amazon import AmazonChecker
+from sites.amazon.browser import Destination
 from tests.conftest import ROOT
+
+PINNED = Destination("Karlskrona 371 16", usable=True, exact=True)
 
 CONFIG = yaml.safe_load((ROOT / "config" / "sites.yaml").read_text(encoding="utf-8"))
 AMAZON = CONFIG["sites"]["amazon"]
@@ -80,7 +83,7 @@ def visits(monkeypatch, tmp_path):
     def fake_open_market(_playwright, _market, _config, **_kwargs):
         page = FakePage(seen)
         handle = types.SimpleNamespace(close=lambda: None)
-        return handle, page, "Sweden", True
+        return handle, page, PINNED
 
     monkeypatch.setattr(amazon_module.amazon_browser, "open_market", fake_open_market)
     monkeypatch.setattr(amazon_module.amazon_browser, "safe_goto",
@@ -142,7 +145,7 @@ def test_a_page_with_no_title_is_a_failure_not_an_unavailable(monkeypatch, tmp_p
 
     monkeypatch.setattr(amazon_module.amazon_browser, "open_market",
                         lambda *_a, **_k: (types.SimpleNamespace(close=lambda: None),
-                                           Blank(seen), "Sweden", True))
+                                           Blank(seen), PINNED))
     monkeypatch.setattr(amazon_module.amazon_browser, "safe_goto",
                         lambda page, url, market: page.goto(url))
     monkeypatch.setattr(amazon_module, "sync_playwright", FakePlaywright)

@@ -944,6 +944,58 @@ stock transition, so no rule in `core/storage.py` could ever surface it.
 `alert_kind` orders these as new -> veto -> site -> restock, so a suppressed
 listing cannot reach you by the side door of a date change.
 
+### Delivery location: country vs. postcode are DIFFERENT failures
+
+`set_delivery_location` returns a `Destination(text, usable, exact)`, and the two
+booleans must not be collapsed back together.
+
+- `usable` — the COUNTRY is right, so this market is comparable to the others and
+  may be pruned against. Only this one feeds `checker.errors`.
+- `exact` — the postcode applied on top, sharpening the delivery estimate from
+  country-level to city-level. Losing it costs precision, not correctness.
+
+On a **foreign** market the country picker is the whole mechanism, so failing it
+means the country is genuinely unknown: `usable=False`, hard stop. On the
+**domestic** market the fallback is the country we wanted — amazon.se serves
+Sweden by default. Measured 2026-09-26 on an unpinned .se session: prices in SEK,
+a normal Swedish delivery promise, no international shopping banner. So that is
+`usable=True, exact=False` plus a note.
+
+That is safe rather than convenient because the wrong-destination case is caught
+INDEPENDENTLY: `parse_product` marks a page untrusted when the international
+banner names a country other than the one asked for. If amazon.se ever starts
+answering for somewhere else, that fires regardless.
+
+**WHY THIS CHANGED — amazon.se's September collapse.** From 2026-09-23 amazon.se
+stopped applying its postcode, worsening monotonically: 54% of runs failed on the
+23rd, 77% on the 24th, 81% on the 25th, 96% on the 26th, while de/fr/es/it stayed
+at 0-1 failures in 48. Two separate effects are visible in the logs and should not
+be confused: a box-wide wobble from 17-22 Sep that hit ALL five markets ~10-20%
+and cleared on its own, and then this .se-only progressive failure.
+
+Diagnosed by rendering the thing, not by reading the log: the popover DOES open
+and contains **"Sorry, content is not available."** — Amazon declining to serve
+the location fragment, not a markup change and not our selectors. It is
+intermittent by hand (one probe failed, the next pinned Karlskrona fine), so it
+is a soft, worsening block rather than an outage. **Root cause still unknown.**
+The `.se`-only "spurious download prompt on navigation" (1462 occurrences,
+literally zero on the other four markets) is NOT the explanation: prompts peaked
+12-16 Sep while pin failures were at their lowest.
+
+The cost was out of all proportion to what was lost. One unpinned market set
+`errors`, which marks the whole Amazon run incomplete, which disables pruning for
+ALL FIVE markets — so state kept ASINs that had been dropped from the watchlist
+days earlier, and every .se alert carried a warning about a destination that was
+in fact correct.
+
+**AND THE RETRY LOOP COULD NOT HELP, BY CONSTRUCTION.** `_open_location_modal`
+retried by clicking the opener again, which is right for the failure its
+docstring measured (the popover never opening). When the popover opens BROKEN it
+covers the opener, so attempts 2 and 3 died with TimeoutError before reaching the
+check. The log shape gives it away every time: one "popover open but no control",
+then two "opener click failed (TimeoutError)". `dismiss_popover` now closes it
+before each retry.
+
 ### In stock, and the scalper problem
 
 "In stock" means **available for purchase or pre-order**. On Shopify that is
@@ -1004,7 +1056,8 @@ far less than having a trustworthy reference.
 - An **unpinned delivery location** makes a market's results describe
   wherever Amazon guessed. That marks the run incomplete (so state is not
   pruned against it) and adds a note to every alert from that market,
-  rather than being only a log line nothing acts on.
+  rather than being only a log line nothing acts on. **But "unpinned" means
+  the wrong COUNTRY, not a missing postcode** — see the section below.
 - Seed reference prices for currently-tracked ASINs from news-notifier's
   existing per-market state to skip the cold-start window. That seed
   correctly ignores the scalped example, whose only observation is
