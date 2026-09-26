@@ -288,6 +288,38 @@ def _open_location_modal(page, market: str, attempts: int = 3) -> bool:
     return False
 
 
+def refresh_after_change(page, market: str, config: dict) -> bool:
+    """Re-load a page so the applied location is reflected. Never raises.
+
+    The change is applied SERVER-SIDE against the session, so ANY successful load
+    shows it. That is what makes a fallback legitimate rather than a workaround:
+    we are not re-submitting anything, just looking for a page that will render
+    the widget.
+
+    Worth the trouble because amazon.se answers `page.reload()` with
+    net::ERR_INVALID_RESPONSE often enough to matter. Measured 2026-09-26: 2 of 6
+    .se sessions submitted the postcode SUCCESSFULLY and then lost it here — the
+    reload raised, the caller's except swallowed it, and the widget was read off a
+    chrome-error page as an empty string. That is a self-inflicted failure on top
+    of Amazon's, and it reported a working session as unpinned.
+    """
+    for step in ("reload", "warm-up URL"):
+        try:
+            if step == "reload":
+                page.reload(wait_until="domcontentloaded", timeout=30000)
+            else:
+                safe_goto(page, f"https://www.{config['domain']}/-/en/", market)
+            page.wait_for_timeout(1500)
+            if page.locator(GLOW_INGRESS_SELECTOR).count():
+                return True
+        except Exception as e:
+            logger.info("[%s] %s after the location change failed (%s) — "
+                        "trying the next way", market, step, type(e).__name__)
+    logger.warning("[%s] no usable page after the location change — the widget "
+                   "cannot be read, so the change cannot be confirmed", market)
+    return False
+
+
 def set_delivery_location(page, market: str, config: dict, country: str,
                           postcode: str) -> Destination:
     """Pin the destination. Never raises; reports what it actually achieved.
@@ -340,11 +372,12 @@ def set_delivery_location(page, market: str, config: dict, country: str,
                 button.first.click(timeout=5000)
                 break
 
-        # Applied server-side against the session; reload so everything
-        # downstream reflects it.
+        # Applied server-side against the session; re-load so everything
+        # downstream reflects it. Must not raise past here — getting this far
+        # means the change was submitted, and losing it to a failed refresh is
+        # exactly the bug refresh_after_change documents.
         page.wait_for_timeout(2000)
-        page.reload(wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_timeout(1500)
+        refresh_after_change(page, market, config)
     except Exception as e:
         logger.warning("[%s] could not set delivery location: %s", market, e)
 
