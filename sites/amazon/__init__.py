@@ -431,6 +431,10 @@ class AmazonChecker(SiteChecker):
                     page.close()
                     page = context.new_page()
                 except Exception as e:
+                    # Count it. Without this the ASIN is dropped silently and
+                    # the run still looks complete, so prune() would delete a
+                    # product we simply failed to look at.
+                    self.errors += 1
                     logger.warning("[%s] %s %s: could not replace the page (%s)",
                                    self.name, market, asin, type(e).__name__)
                     return page, False

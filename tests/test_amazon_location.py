@@ -20,7 +20,7 @@ import pytest
 from sites.amazon import AmazonChecker
 from sites.amazon.browser import Destination, classify_destination
 from sites.amazon.markets import MARKETS
-from tests.test_amazon_markets import (AMAZON, FakeClient, FakePage,
+from tests.test_amazon_markets import (AMAZON, PINNED, FakeClient, FakePage,
                                        FakePlaywright)
 
 SE, DE = MARKETS["se"], MARKETS["de"]
@@ -153,3 +153,53 @@ def test_every_exit_returns_a_destination(market, country):
     # imprecise; on a foreign one it is unusable.
     assert got.exact is False
     assert got.usable is (market == "se")
+
+
+# ---------------------------------------------- what the review caught -------
+
+def test_a_country_reading_does_not_pass_as_a_postcode():
+    """amazon.se reads "Sweden" when only a COUNTRY got set. Accepting either
+    signal would report that as `exact` — claiming city-level precision we do
+    not have, with no note saying otherwise."""
+    got = _classify("Sweden")                      # domestic market
+    assert got.exact is False, "the postcode did not apply, so this is not exact"
+    assert got.usable is True
+    assert "country-level" in got.note
+
+
+def test_a_postcode_reading_does_not_pass_on_a_foreign_market():
+    """Symmetrically: a foreign market is pinned by COUNTRY, so a stray postcode
+    in the widget text is not the thing being checked."""
+    got = _classify("371 16", market="de")
+    assert got.exact is False
+    assert got.usable is False
+
+
+def test_a_failed_page_replacement_marks_the_run_incomplete(monkeypatch, tmp_path):
+    """Dropping an ASIN silently while the run still looks complete would let
+    prune() delete a product we merely failed to look at."""
+    from sites import amazon as amazon_module
+
+    class Stuck(FakePage):
+        @property
+        def context(self):
+            raise RuntimeError("browser is gone")
+
+        def goto(self, url, **_kwargs):
+            self._visited.append(url)
+            self.url = "chrome-error://chromewebdata/"
+
+    seen: list[str] = []
+    monkeypatch.setattr(amazon_module.amazon_browser, "open_market",
+                        lambda *_a, **_k: (types.SimpleNamespace(close=lambda: None),
+                                           Stuck(seen), PINNED))
+    monkeypatch.setattr(amazon_module.amazon_browser, "safe_goto",
+                        lambda page, url, market: page.goto(url))
+    monkeypatch.setattr(amazon_module, "sync_playwright", FakePlaywright)
+
+    options = dict(AMAZON, markets=["se"], watchlist=["B0TEST"])
+    checker = AmazonChecker("amazon", options, FakeClient(), tmp_path)
+    results = list(checker.check())
+
+    assert results == []
+    assert checker.errors >= 1, "a dropped ASIN must stop the prune"

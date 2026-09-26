@@ -404,13 +404,14 @@ def classify_destination(text: str, market: str, *, domestic: bool, country: str
     Pure, so the rules are testable without a browser — which they need to be,
     because they decide whether a market's results may be pruned against.
     """
-    # Substring check both ways: the widget renders the country alone for an
-    # international destination ("Sweden") but city + postcode for a domestic one
-    # ("Karlskrona 371 16"), so neither is a prefix of a fixed string.
-    matched = bool(text) and (
-        country.strip().lower() in text.lower()
-        or (postcode.replace(" ", "") and postcode.replace(" ", "") in text.replace(" ", ""))
-    )
+    # Each market is judged on ITS OWN mechanism, not on either signal.
+    # The widget renders the country alone for an international destination
+    # ("Sweden") and city + postcode for a domestic one ("Karlskrona 371 16"),
+    # so accepting either would let amazon.se read "Sweden" — which is what it
+    # says when only a country got set — and claim the postcode applied. That
+    # would report city-level precision we do not have, with no note saying so.
+    wanted = (postcode if domestic else country).strip().replace(" ", "").lower()
+    matched = bool(text) and bool(wanted) and wanted in text.replace(" ", "").lower()
     if matched:
         return Destination(text, usable=True, exact=True)
     if domestic:
