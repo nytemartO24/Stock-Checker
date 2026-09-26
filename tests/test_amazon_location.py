@@ -119,3 +119,37 @@ def test_a_pinned_market_carries_no_note(monkeypatch, tmp_path):
     results, checker = _run(monkeypatch, tmp_path, pinned)
     assert checker.errors == 0
     assert all(not r.notes or "location" not in " ".join(r.notes) for r in results)
+
+
+# --------------------------------------- every exit returns a Destination ----
+
+class _NoOpenerPage:
+    """A page where the location opener simply is not there.
+
+    The failure this pins down was found by a live run, not a test:
+    set_delivery_location had FIVE exits and only the last one was converted to
+    return a Destination, so every early path crashed open_market with
+    "'str' object has no attribute 'exact'". A stub this small would have caught
+    it, which is the point.
+    """
+
+    url = "https://www.amazon.se/-/en/"
+
+    def locator(self, _selector):
+        return types.SimpleNamespace(count=lambda: 0, first=None)
+
+    def wait_for_timeout(self, _ms):
+        pass
+
+
+@pytest.mark.parametrize("market,country", [("se", "Sweden"), ("de", "Sweden")])
+def test_every_exit_returns_a_destination(market, country):
+    from sites.amazon.browser import set_delivery_location
+
+    got = set_delivery_location(_NoOpenerPage(), market, MARKETS[market],
+                                country, "371 16")
+    assert isinstance(got, Destination)
+    # And it still judges correctly: no widget at all on the domestic market is
+    # imprecise; on a foreign one it is unusable.
+    assert got.exact is False
+    assert got.usable is (market == "se")

@@ -345,21 +345,34 @@ def set_delivery_location(page, market: str, config: dict, country: str,
     whatever this function concluded.
     """
     domestic = config["country"].strip().lower() == country.strip().lower()
+
+    def observed() -> Destination:
+        """Read the widget and judge it. The ONLY way out of this function.
+
+        There were five separate exits before, and converting them to
+        `Destination` one at a time missed four — every early path crashed
+        open_market with "'str' object has no attribute 'exact'". Funnelling them
+        makes that impossible rather than merely unlikely.
+        """
+        return classify_destination(read_delivery_location(page), market,
+                                    domestic=domestic, country=country,
+                                    postcode=postcode)
+
     try:
         opener = page.locator(GLOW_OPENER_SELECTOR)
         if opener.count() == 0:
             logger.warning("[%s] no location picker on this page", market)
-            return read_delivery_location(page)
+            return observed()
         if not _open_location_modal(page, market):
-            return read_delivery_location(page)
+            return observed()
 
         if domestic:
             if not _fill_postcode(page, market, postcode):
-                return read_delivery_location(page)
+                return observed()
             # #GLUXZipUpdate is a <span> wrapping the real submit input.
             page.locator("#GLUXZipUpdate input.a-button-input").first.click(timeout=5000)
         elif not _select_country(page, market, country):
-            return read_delivery_location(page)
+            return observed()
 
         # Applying swaps in a success panel whose Continue button starts
         # hidden inside #GLUXHiddenSuccessDialog — it becoming visible is
@@ -381,8 +394,7 @@ def set_delivery_location(page, market: str, config: dict, country: str,
     except Exception as e:
         logger.warning("[%s] could not set delivery location: %s", market, e)
 
-    return classify_destination(read_delivery_location(page), market,
-                                domestic=domestic, country=country, postcode=postcode)
+    return observed()
 
 
 def classify_destination(text: str, market: str, *, domestic: bool, country: str,
