@@ -44,6 +44,13 @@ SITE_LINE = re.compile(r"^(\S+) \[INFO\] \[([\w.-]+)\] (\d+) product\(s\), (\d+)
 LEVEL_LINE = re.compile(r"^(\S+) \[(WARNING|ERROR)\] (.*)$")
 PINNED = re.compile(r"^(\S+) \[INFO\] \[([a-z]{2})\] delivery location confirmed")
 NOT_PINNED = re.compile(r"^(\S+) \[WARNING\] \[([a-z]{2})\] DELIVERY LOCATION NOT APPLIED")
+# A domestic market that could not apply its POSTCODE. Distinct from NOT_PINNED
+# on purpose: the country is still right, so results stand and the run is still
+# prunable — it is a loss of precision, not a wrong destination. Without this
+# pattern the check would simply stop seeing amazon.se, because since
+# 2026-09-26 that is the line .se emits instead of NOT_PINNED. A monitoring
+# check that silently counts nothing is worse than one that reports a problem.
+IMPRECISE = re.compile(r"^(\S+) \[WARNING\] \[([a-z]{2})\] postcode not applied")
 DISCOVERY = re.compile(r"([a-z]{2})\s+(\d+) new of (\d+) found")
 PRUNED = re.compile(r"^(\S+) \[INFO\] (\S+): pruned (\d+) entr")
 UNDELIVERED = re.compile(r"alert for (\S+) not delivered")
@@ -185,12 +192,19 @@ def main() -> int:
     print("\n[amazon]")
     pinned = Counter(m.group(2) for m in (PINNED.match(ln) for ln in lines) if m)
     unpinned = Counter(m.group(2) for m in (NOT_PINNED.match(ln) for ln in lines) if m)
-    markets = sorted(set(pinned) | set(unpinned))
+    imprecise = Counter(m.group(2) for m in (IMPRECISE.match(ln) for ln in lines) if m)
+    markets = sorted(set(pinned) | set(unpinned) | set(imprecise))
     for market in markets:
-        good, bad = pinned[market], unpinned[market]
-        rate = bad / (good + bad) if (good + bad) else 0
-        check(f"{market} location pinned", rate == 0,
-              f"{bad} failure(s) of {good + bad} ({rate:.0%})")
+        good, bad, rough = pinned[market], unpinned[market], imprecise[market]
+        total = good + bad + rough
+        # Only a WRONG COUNTRY is a failure — that is what makes a market's
+        # results incomparable and unprunable. A missing postcode is reported
+        # separately so the degradation stays visible without crying wolf.
+        rate = bad / total if total else 0
+        detail = f"{bad} wrong-country failure(s) of {total}"
+        if rough:
+            detail += f"; {rough} run(s) country-level only (no postcode)"
+        check(f"{market} location pinned", rate == 0, detail)
     if not markets:
         check("amazon markets seen", False, "no pin lines at all in this window")
 

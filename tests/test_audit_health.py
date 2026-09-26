@@ -60,3 +60,25 @@ def test_missing_archive_is_not_an_error(tmp_path):
 
 def test_missing_log_is_empty(tmp_path):
     assert tail_lines(tmp_path / "nope.log", "2026-09-13T00:00:00") == []
+
+
+def test_the_imprecise_postcode_line_is_counted_separately():
+    """Since 2026-09-26 a domestic market that cannot apply its postcode logs
+    "postcode not applied" instead of "DELIVERY LOCATION NOT APPLIED". The audit
+    must see it — a check that silently counts nothing is worse than one that
+    reports a problem — but must not call it a failure, because the country is
+    still right and the market is still prunable."""
+    from scripts.audit_health import IMPRECISE, NOT_PINNED, PINNED
+
+    rough = ("2026-09-26T12:45:10 [WARNING] [se] postcode not applied — widget "
+             "reads ''. The domestic store already answers for Sweden")
+    wrong = ("2026-09-26T12:45:10 [WARNING] [de] DELIVERY LOCATION NOT APPLIED — "
+             "widget reads 'Update location', wanted Sweden/37116.")
+    good = "2026-09-26T12:45:36 [INFO] [de] delivery location confirmed: 'Sweden'"
+
+    assert IMPRECISE.match(rough).group(2) == "se"
+    assert NOT_PINNED.match(rough) is None, "imprecise is not a wrong destination"
+    assert NOT_PINNED.match(wrong).group(2) == "de"
+    assert IMPRECISE.match(wrong) is None
+    assert PINNED.match(good).group(2) == "de"
+    assert IMPRECISE.match(good) is None
