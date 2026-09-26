@@ -377,6 +377,11 @@ class AmazonChecker(SiteChecker):
         try:
             for asin in self.watchlist:
                 try:
+                    # Rebind: a stuck navigation is recovered by replacing the
+                    # page, and the replacement has to carry to the next ASIN.
+                    page, landed = self._goto_product(page, market, config, asin)
+                    if not landed:
+                        continue
                     result = self._check_one(page, market, config, asin, references, country,
                                              deliveries, location_note=location_note)
                 except Exception:
@@ -390,25 +395,53 @@ class AmazonChecker(SiteChecker):
             logger.info("[%s] %s: done (delivering to %s)", self.name, market,
                         destination.text or "UNKNOWN")
 
+    def _goto_product(self, page, market: str, config: dict, asin: str):
+        """Navigate to a product page. Returns (page, landed) — the page may be a
+        NEW one, so callers must rebind it.
+
+        RE-NAVIGATING A BROKEN PAGE CANNOT WORK, and this project already knew
+        that: Amazon's spurious "Download is starting" aborts a navigation and
+        leaves the page at chrome-error://chromewebdata/, from which every
+        further goto lands on chrome-error again. `open_market` learned this for
+        the warm-up and fixed it by REPLACING the page — but the product path
+        kept the useless same-page retry, so a single stuck navigation cost that
+        ASIN for the run and marked the whole run incomplete, which blocks
+        pruning. Seen live on amazon.se 2026-09-26.
+
+        A fresh page in the same context escapes the broken state and keeps the
+        warmed-up cookies and the pinned location, which is the whole reason for
+        having warmed up.
+        """
+        url = f"https://www.{config['domain']}/-/en/dp/{asin}"
+        for attempt in (1, 2):
+            # Browser navigations are requests to the site like any other, so
+            # they go through the same politeness policy as the JSON transports.
+            self.client.pacer.wait()
+            amazon_browser.safe_goto(page, url, market)
+            # A goto can silently land somewhere other than the product page
+            # (the pilot caught a run reading the plain .se homepage as "the
+            # delivery block just isn't there"). Verify before trusting content.
+            if asin in page.url:
+                return page, True
+            if attempt == 1:
+                logger.info("[%s] %s %s: landed on %s — replacing the page and "
+                            "retrying", self.name, market, asin, page.url)
+                try:
+                    context = page.context
+                    page.close()
+                    page = context.new_page()
+                except Exception as e:
+                    logger.warning("[%s] %s %s: could not replace the page (%s)",
+                                   self.name, market, asin, type(e).__name__)
+                    return page, False
+        self.errors += 1
+        logger.warning("[%s] %s %s: landed on %s — skipping", self.name, market,
+                       asin, page.url)
+        return page, False
+
     def _check_one(self, page, market: str, config: dict, asin: str,
                    references: ReferencePrices, country: str, deliveries,
                    *, location_note: str | None = None) -> StockResult | None:
-        url = f"https://www.{config['domain']}/-/en/dp/{asin}"
-        # Browser navigations are requests to the site like any other, so
-        # they go through the same politeness policy as the JSON transports.
-        self.client.pacer.wait()
-        amazon_browser.safe_goto(page, url, market)
-
-        # A goto can silently land somewhere other than the product page
-        # (the pilot caught a run reading the plain .se homepage as "the
-        # delivery block just isn't there"). Verify before trusting content.
-        if asin not in page.url:
-            amazon_browser.safe_goto(page, url, market)
-            if asin not in page.url:
-                self.errors += 1
-                logger.warning("[%s] %s %s: landed on %s — skipping", self.name, market, asin, page.url)
-                return None
-
         # Give the client-side blocks a chance to arrive before reading. On
         # timeout, fall through and parse anyway — the page may legitimately
         # have none of them (an unavailable listing has no delivery block), and

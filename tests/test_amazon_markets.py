@@ -159,3 +159,67 @@ def test_a_page_with_no_title_is_a_failure_not_an_unavailable(monkeypatch, tmp_p
     # errors is what stops main.py pruning state against an incomplete view, so
     # a run of these cannot quietly delete the products it failed to read.
     assert checker.errors == 1
+
+
+class _StuckThenFine(FakePage):
+    """First navigation sticks on chrome-error; a FRESH page works.
+
+    Models the real behaviour this project documented for the warm-up: Amazon's
+    spurious download prompt aborts a navigation and leaves the page at
+    chrome-error://chromewebdata/, where every further goto on THAT page lands on
+    chrome-error again. So a same-page retry cannot recover and a new page can.
+    """
+
+    def __init__(self, visited, context):
+        super().__init__(visited)
+        self.context = context
+        self.stuck = True
+        self.closed = False
+
+    def goto(self, url, **_kwargs):
+        self._visited.append(url)
+        self.url = "chrome-error://chromewebdata/" if self.stuck else url
+
+    def close(self):
+        self.closed = True
+
+
+class _Context:
+    """Hands out pages; only the first one is stuck."""
+
+    def __init__(self, visited):
+        self._visited = visited
+        self.pages = []
+
+    def new_page(self):
+        page = _StuckThenFine(self._visited, self)
+        page.stuck = not self.pages  # the first page is the broken one
+        self.pages.append(page)
+        return page
+
+
+def test_a_stuck_navigation_is_recovered_by_replacing_the_page(monkeypatch, tmp_path):
+    """The old code re-issued the goto on the SAME page, which lands on
+    chrome-error again — a retry that could never work. That cost the ASIN and,
+    because it counts as an error, blocked pruning for the whole site."""
+    from sites import amazon as amazon_module
+
+    visited: list[str] = []
+    context = _Context(visited)
+    first = context.new_page()
+
+    monkeypatch.setattr(amazon_module.amazon_browser, "open_market",
+                        lambda *_a, **_k: (types.SimpleNamespace(close=lambda: None),
+                                           first, PINNED))
+    monkeypatch.setattr(amazon_module.amazon_browser, "safe_goto",
+                        lambda page, url, market: page.goto(url))
+    monkeypatch.setattr(amazon_module, "sync_playwright", FakePlaywright)
+
+    options = dict(AMAZON, markets=["se"], watchlist=["B0TEST"])
+    checker = AmazonChecker("amazon", options, FakeClient(), tmp_path)
+    results = list(checker.check())
+
+    assert first.closed, "the broken page must be closed, not retried"
+    assert len(context.pages) == 2, "a replacement page must be created"
+    assert results, "and the product is then read successfully"
+    assert checker.errors == 0, "a recovered navigation is not a failure to see"

@@ -175,4 +175,10 @@ CLAUDE.md and trim this file.
   1462 spurious download prompts, zero elsewhere) was NOT the cause - prompts
   peaked on the days pin failures were lowest. Correlation by market is not
   correlation over time; check both.
+- 2026-09-26: the SAME useless-retry bug existed twice, and the second copy sat
+  next to a comment explaining it. open_market recovers a chrome-error warm-up by
+  REPLACING the page, and its comment says re-navigating that page lands on
+  chrome-error again - yet _check_one's product retry did exactly that
+  re-navigation. When a lesson is written down, grep for every place it applies,
+  not just the one that hurt.
 
