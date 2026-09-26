@@ -187,13 +187,15 @@ class _StuckThenFine(FakePage):
 class _Context:
     """Hands out pages; only the first one is stuck."""
 
-    def __init__(self, visited):
+    def __init__(self, visited, stuck_pages=1):
         self._visited = visited
         self.pages = []
+        self.stuck_pages = stuck_pages
 
     def new_page(self):
         page = _StuckThenFine(self._visited, self)
-        page.stuck = not self.pages  # the first page is the broken one
+        # The first `stuck_pages` pages are broken; the next one works.
+        page.stuck = len(self.pages) < self.stuck_pages
         self.pages.append(page)
         return page
 
@@ -223,3 +225,29 @@ def test_a_stuck_navigation_is_recovered_by_replacing_the_page(monkeypatch, tmp_
     assert len(context.pages) == 2, "a replacement page must be created"
     assert results, "and the product is then read successfully"
     assert checker.errors == 0, "a recovered navigation is not a failure to see"
+
+
+def test_two_stuck_pages_in_a_row_are_still_recovered(monkeypatch, tmp_path):
+    """Measured on amazon.se: the REPLACEMENT page can hit the same aborted
+    navigation. Two attempts lost an ASIN of three, and a lost ASIN blocks
+    pruning for every market, so the third attempt earns its keep."""
+    from sites import amazon as amazon_module
+
+    visited: list[str] = []
+    context = _Context(visited, stuck_pages=2)
+    first = context.new_page()
+
+    monkeypatch.setattr(amazon_module.amazon_browser, "open_market",
+                        lambda *_a, **_k: (types.SimpleNamespace(close=lambda: None),
+                                           first, PINNED))
+    monkeypatch.setattr(amazon_module.amazon_browser, "safe_goto",
+                        lambda page, url, market: page.goto(url))
+    monkeypatch.setattr(amazon_module, "sync_playwright", FakePlaywright)
+
+    options = dict(AMAZON, markets=["se"], watchlist=["B0TEST"])
+    checker = AmazonChecker("amazon", options, FakeClient(), tmp_path)
+    results = list(checker.check())
+
+    assert len(context.pages) == 3, "two replacements before the working page"
+    assert results, "and the third attempt reads it"
+    assert checker.errors == 0

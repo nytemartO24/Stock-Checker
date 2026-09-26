@@ -413,7 +413,16 @@ class AmazonChecker(SiteChecker):
         having warmed up.
         """
         url = f"https://www.{config['domain']}/-/en/dp/{asin}"
-        for attempt in (1, 2):
+        # THREE attempts, not two, and the third is not padding. Measured on
+        # amazon.se 2026-09-26: the spurious download prompt fires on most .se
+        # navigations and safe_goto usually rides it out, but it aborts one often
+        # enough that two attempts still lost 1 ASIN of 3 — and a lost ASIN marks
+        # the run incomplete, which blocks pruning for every market.
+        #
+        # Request-volume note (CLAUDE.md principle 2): this only costs anything
+        # when a navigation actually fails. A normal read still makes exactly one
+        # request, and the pacer delay applies to every attempt.
+        for attempt in (1, 2, 3):
             # Browser navigations are requests to the site like any other, so
             # they go through the same politeness policy as the JSON transports.
             self.client.pacer.wait()
@@ -423,9 +432,10 @@ class AmazonChecker(SiteChecker):
             # delivery block just isn't there"). Verify before trusting content.
             if asin in page.url:
                 return page, True
-            if attempt == 1:
+            if attempt < 3:
                 logger.info("[%s] %s %s: landed on %s — replacing the page and "
-                            "retrying", self.name, market, asin, page.url)
+                            "retrying (%d/3)", self.name, market, asin, page.url,
+                            attempt)
                 try:
                     context = page.context
                     page.close()
