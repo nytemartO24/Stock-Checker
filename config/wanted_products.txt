@@ -1,8 +1,9 @@
-# The Beyblades the user is hunting — cut to five on 2026-09-16.
+# The Beyblades the user is hunting — cut to five on 2026-09-16, to three on
+# 2026-09-26.
 #
-# The rest were FOUND AND ORDERED, not abandoned, so they are listed at the
-# bottom rather than deleted: a name that comes back should come back as a
-# decision, not because someone half-remembered it. This is the SOURCE OF TRUTH for
+# Dropped names are listed at the bottom rather than deleted: a name that comes
+# back should come back as a decision, not because someone half-remembered it.
+# This is the SOURCE OF TRUTH for
 # what should be watchlisted; the per-store `watchlist:` entries in sites.yaml
 # are derived from it by `scripts/resolve_watchlist.py`, because every store
 # keys products differently (Shopify handle, WooCommerce slug, Ginza numeric id,
@@ -18,12 +19,16 @@
 Reaper Incendio
 Shark Scale
 Sterling Wolf
-Seize Jaguar
-Glare Cyclops
 
-# --- Ordered 2026-09-16, no longer hunted -------------------------------------
+# --- No longer hunted ---------------------------------------------------------
 # Re-add a line above to start tracking it again, then re-run
 # scripts/resolve_watchlist.py so every store's watchlist follows.
+#
+# Dropped 2026-09-26:
+# Seize Jaguar     - was in stock on amazon.fr at 8.5x when it was dropped
+# Glare Cyclops
+#
+# Dropped 2026-09-16, all ordered:
 # Ring Aether
 # Suppress Superion
 # Cobalt Drake

@@ -103,21 +103,26 @@ sites:
       # nothing. B0FCYT9DG6 was only ever discovered on .se and is checked on
       # .de/.fr/.es/.it all the same.
       #
-      # All five wanted products are listed on Amazon, and all five are here.
+      # All three wanted products are listed on Amazon, and all three are here.
       - B0FCYT9DG6  # Shark Scale 4-50UF
       - B0DN6YLGRX  # Sterling Wolf 3-80FB — VERIFIED BY HAND; this entry used to
                     # say "Silver Wolf", which was wrong. amazon.se titles it
                     # "Bey Blade X Sterling Wolf", as two words. NOT in
                     # news-notifier's discovery catalogue, so the resolver
                     # cannot propose it — do not drop it because a resolver run
-                    # came back without it.
+                    # came back without it. Confirmed in stock on amazon.it
+                    # 2026-09-16 at EUR 77.98, which is a 4x scalp, so the only
+                    # reason you have not heard about it is the scalp filter.
       - B0DNFQ99JW  # Reaper Incendio 4-70K — likewise hand-verified and absent
                     # from discovery.
-      - B0H1RFQ9L3  # Glare Cyclops 7-55FB
-      - B0H1RB48HK  # Seize Jaguar HN UX — amazon.se calls it "BEY BBX Browns Canyon"
-      # ORDERED 2026-09-16 and dropped from the watchlist: B0G4NFJJN1 (Cobalt
-      # Drake 4-60F, = .se "BEY Blade BBX Shenandoah") and B0H1RKKYHC (Nether
-      # Incendio Z UX, = .se "BEY BBX Mill Springs", = .es "Nether Fire").
+      # DROPPED 2026-09-26: B0H1RFQ9L3 (Glare Cyclops 7-55FB, = .se "BEY BBX
+      # Congaree" — the one whose 2027 release date used to ping twice an hour)
+      # and B0H1RB48HK (Seize Jaguar HN UX, = .se "BEY BBX Browns Canyon"),
+      # which was in stock on amazon.fr at 8.5x the reference when it went.
+      #
+      # ORDERED 2026-09-16 and dropped then: B0G4NFJJN1 (Cobalt Drake 4-60F,
+      # = .se "BEY Blade BBX Shenandoah") and B0H1RKKYHC (Nether Incendio Z UX,
+      # = .se "BEY BBX Mill Springs", = .es "Nether Fire").
       # Kept as a note because between them they are the record of THREE
       # independent ways an Amazon title can differ from the name you know:
       # by park codename (se), by language (es translates it), and by word
@@ -351,12 +356,18 @@ sites:
       # Do not hand-edit an identifier here: re-run the resolver instead, so the
       # wanted list stays the single source of truth.
       - beyblade-x-scale-shark-4-50uf-ux-booster-pack                  # Shark Scale 4-50UF
-      # A BUNDLE containing wanted products. Watched deliberately: at this store
-      # Tread Croc existed ONLY inside a bundle and one went by unnoticed, which
-      # is part of why this project exists. This is the only bundle left that
-      # still carries something wanted — it holds Seize Jaguar AND Glare
-      # Cyclops, and neither is sold here on its own.
-      - beyblade-x-delta-unicorn-po-3-60gu-cx-glory-valkerion-lf-ux-seize-jaguar-hn-ux-glare-cyclops-7-55fb-bx-infinity-starter-pack-bundle          # Seize Jaguar + Glare Cyclops
+      # NO BUNDLES ARE WATCHED HERE ANY MORE, and that is a real loss worth
+      # stating. Bundles are watched at this store because Tread Croc existed
+      # ONLY inside one and a restock went by unnoticed, which is part of why
+      # this project exists. But every bundle here was watched for products that
+      # are no longer wanted — the last one, the Delta Unicorn four-pack, held
+      # Seize Jaguar and Glare Cyclops, both dropped 2026-09-26. Shark Scale is
+      # sold on its own here, so nothing wanted is now bundle-only.
+      #
+      # IF A WANTED PRODUCT IS EVER BUNDLE-ONLY HERE AGAIN, watchlist the bundle
+      # by handle. The new-product alert will not save you: a bundle that has
+      # existed for weeks is not new, and its restock is what you would miss.
+      #
       # Dropped 2026-09-16, all ordered: Suppress Superion, Nether Incendio,
       # Whip Brachio, and the two bundles whose only wanted contents were
       # those three plus Cobalt Drake and Clock Mirage.

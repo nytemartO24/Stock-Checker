@@ -445,14 +445,26 @@ at every retailer in every language, so once any catalogue names a product
 plainly its code is learned and every other catalogue can be searched by it. This
 is the cheap cousin of the barcode bridge and it needs no product-page fetch.
 
-**THE WANTED LIST IS FIVE, since 2026-09-16** — Reaper Incendio, Shark Scale,
-Sterling Wolf, Seize Jaguar, Glare Cyclops. The other eight were found and
-ordered, and are kept commented out at the bottom of
-`config/wanted_products.txt` rather than deleted. lereservoir stocks none of the
-five, so its watchlist is deliberately empty — which means "everything", and
-everything there is three products. Its job is now purely new-product discovery;
-see the reasoning in `sites.yaml`. The measurements below are from the 13-product era and are kept
-because what they say about NAMING still holds.
+**THE WANTED LIST IS THREE, since 2026-09-26** — Reaper Incendio, Shark Scale,
+Sterling Wolf. It was 13, then five on 2026-09-16, then these. Dropped names are
+kept commented out at the bottom of `config/wanted_products.txt` rather than
+deleted, so re-adding one is a decision rather than a half-memory, and the file
+records WHEN and why each went.
+
+All three are on Amazon and all three are watched on all five domains. Shark
+Scale is the only one any Shopify/Woo store sells that is also at ginza, so its
+coverage is the widest; Reaper Incendio and Sterling Wolf are gameshop, rarewaves
+and Amazon only.
+
+lereservoir stocks none of the three, so its watchlist is deliberately empty —
+which means "everything", and everything there is three products. Its job is
+purely new-product discovery; see the reasoning in `sites.yaml`. toysnowman now
+watches no BUNDLES for the first time, which is a real reduction in cover and is
+explained there: every bundle it had was watched for products no longer wanted,
+and nothing wanted is bundle-only at that store today.
+
+The measurements below are from the 13-product era and are kept because what they
+say about NAMING still holds.
 
 Coverage of the user's then-13 wanted products, measured 2026-09-10: Shark Scale is at
 5 of 10 catalogues, most others at 1-4, and **Ring Aether and Blitz Bahamut at
@@ -460,8 +472,8 @@ none** — absent from rarewaves' full 156-product catalogue too, so they are
 almost certainly unreleased here. Blitz Bahamut exists on amazon.se only as a
 945 kr Takara Tomy import. Both will arrive through new-product alerts.
 
-Of those 13, only 5 were on Amazon at all — and those 5 are exactly the five
-still wanted, so every wanted product is now watched there.
+Of those 13, only 5 were on Amazon at all, and the three still wanted are a
+subset of those, so every wanted product is watched there.
 
 ### The cross-site naming problem — the barcode bridge WORKS
 
@@ -790,8 +802,8 @@ dedupes by handle), but whether to include one is a judgement about content.
 
 Currently tracked: toysnowman's `beyblade` (59 after excluding Beyblade Burst,
 SEK) and gameshop.se via the WooCommerce module (131 after the same exclusion,
-SEK), plus ginza, rarewaves, lereservoir and Amazon. 14 watchlisted items across
-all six as of 2026-09-16.
+SEK), plus ginza, rarewaves, lereservoir and Amazon. 11 watchlisted items across
+all six as of 2026-09-26.
 A store that is not Shopify needs its own module — `audit_store.py` only
 probes Shopify, and says so when a store is not.
 
